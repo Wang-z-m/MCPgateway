@@ -1,0 +1,28 @@
+tool_meta:
+  name: probe_retry
+  title: Probe retry scenario
+  description: Trigger a flaky downstream endpoint to verify idempotent retry behavior.
+  version: "1.0.0"
+  tags: ["experiment", "retry"]
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+http_target:
+  method: GET
+  base_url: http://127.0.0.1:9001
+  path: /flaky
+  timeout_seconds: 2
+  retry_count: 1
+request_mapping:
+  path_map: {}
+  query_map: {}
+  header_map: {}
+  body_map: {}
+response_mapping:
+  result_path: data
+  include_http_meta: true
+error_mapping:
+  status_map:
+    "503": DOWNSTREAM_ERROR
+  default_code: DOWNSTREAM_ERROR

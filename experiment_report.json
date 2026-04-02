@@ -1,0 +1,748 @@
+{
+  "generated_at": "2026-03-26T04:43:01.724931+00:00",
+  "initialize": {
+    "payload": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": "2025-03-26",
+        "serverInfo": {
+          "name": "mcp-smart-api-gateway",
+          "version": "0.1.0"
+        },
+        "capabilities": {
+          "tools": {
+            "listChanged": true
+          },
+          "logging": {}
+        }
+      }
+    },
+    "latency_ms": 7,
+    "http_status": 200,
+    "headers": {
+      "x-request-id": "1fb0c1e86a52439b83d7a5707bfc610d",
+      "x-rate-limit-limit": "60",
+      "x-rate-limit-remaining": "59",
+      "x-rate-limit-reset": "60"
+    }
+  },
+  "tools_list": {
+    "payload": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "tools": [
+          {
+            "name": "create_order",
+            "title": "Create order",
+            "description": "Create a demo order in the downstream REST API.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "item_name": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "number"
+                },
+                "customer_name": {
+                  "type": "string"
+                },
+                "request_source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "item_name",
+                "amount",
+                "customer_name"
+              ],
+              "additionalProperties": false
+            },
+            "annotations": {
+              "version": "1.0.0",
+              "tags": [
+                "demo",
+                "mutation"
+              ]
+            }
+          },
+          {
+            "name": "get_baidu_suggestion",
+            "title": "Get Baidu suggestion",
+            "description": "Query suggestion list from Baidu public endpoint.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "keyword": {
+                  "type": "string",
+                  "description": "The query keyword for Baidu suggestion."
+                }
+              },
+              "required": [
+                "keyword"
+              ],
+              "additionalProperties": false
+            },
+            "annotations": {
+              "version": "1.0.0",
+              "tags": [
+                "real-api",
+                "china",
+                "search"
+              ]
+            }
+          },
+          {
+            "name": "get_user",
+            "title": "Get user profile",
+            "description": "Query a user profile from the downstream REST API.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "user_id": {
+                  "type": "integer",
+                  "description": "Numeric user identifier."
+                },
+                "verbose": {
+                  "type": "boolean",
+                  "description": "Whether to request verbose output."
+                }
+              },
+              "required": [
+                "user_id"
+              ],
+              "additionalProperties": false
+            },
+            "annotations": {
+              "version": "1.0.0",
+              "tags": [
+                "demo",
+                "query"
+              ]
+            }
+          },
+          {
+            "name": "probe_failure",
+            "title": "Probe downstream failure",
+            "description": "Trigger a downstream 500 error for fault-handling experiments.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "annotations": {
+              "version": "1.0.0",
+              "tags": [
+                "experiment",
+                "failure"
+              ]
+            }
+          },
+          {
+            "name": "probe_retry",
+            "title": "Probe retry scenario",
+            "description": "Trigger a flaky downstream endpoint to verify idempotent retry behavior.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "annotations": {
+              "version": "1.0.0",
+              "tags": [
+                "experiment",
+                "retry"
+              ]
+            }
+          },
+          {
+            "name": "probe_slow",
+            "title": "Probe slow downstream",
+            "description": "Trigger a slow but successful downstream response for experiment use.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "annotations": {
+              "version": "1.0.0",
+              "tags": [
+                "experiment",
+                "latency"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "latency_ms": 30,
+    "http_status": 200,
+    "headers": {
+      "x-request-id": "2cf3638754514cc7848738eb39cf2071",
+      "x-rate-limit-limit": "60",
+      "x-rate-limit-remaining": "58",
+      "x-rate-limit-reset": "59"
+    }
+  },
+  "functional_cases": {
+    "get_user": {
+      "ok": true,
+      "latency_ms": 55,
+      "http_status": 200,
+      "request_id": 3,
+      "error_code": null,
+      "error_category": null,
+      "attempts_made": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "用户 User 1 的邮箱是 user1@example.com，角色为 tester。"
+            }
+          ],
+          "structuredContent": {
+            "id": 1,
+            "name": "User 1",
+            "email": "user1@example.com",
+            "role": "tester"
+          },
+          "meta": {
+            "status_code": 200,
+            "elapsed_ms": 13,
+            "attempts_made": 1
+          }
+        }
+      }
+    },
+    "create_order": {
+      "ok": true,
+      "latency_ms": 54,
+      "http_status": 200,
+      "request_id": 4,
+      "error_code": null,
+      "error_category": null,
+      "attempts_made": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"order_id\": \"ORD-10001\",\n  \"status\": \"created\",\n  \"amount\": 99.5,\n  \"customer\": \"Alice\"\n}"
+            }
+          ],
+          "structuredContent": {
+            "order_id": "ORD-10001",
+            "status": "created",
+            "amount": 99.5,
+            "customer": "Alice"
+          },
+          "meta": {
+            "status_code": 200,
+            "elapsed_ms": 12,
+            "attempts_made": 1
+          }
+        }
+      }
+    },
+    "probe_slow": {
+      "ok": true,
+      "latency_ms": 374,
+      "http_status": 200,
+      "request_id": 5,
+      "error_code": null,
+      "error_category": null,
+      "attempts_made": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"status\": \"slow-ok\"\n}"
+            }
+          ],
+          "structuredContent": {
+            "status": "slow-ok"
+          },
+          "meta": {
+            "status_code": 200,
+            "elapsed_ms": 326,
+            "attempts_made": 1
+          }
+        }
+      }
+    },
+    "probe_failure": {
+      "ok": false,
+      "latency_ms": 65,
+      "http_status": 200,
+      "request_id": 6,
+      "error_code": -32050,
+      "error_category": "DOWNSTREAM_ERROR",
+      "attempts_made": null,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "error": {
+          "code": -32050,
+          "message": "Downstream REST service returned HTTP 500.",
+          "data": {
+            "category": "DOWNSTREAM_ERROR",
+            "downstream_status": 500,
+            "elapsed_ms": 13,
+            "downstream_message": "Mock failure",
+            "downstream_body": "{\"detail\":\"Mock failure\"}"
+          }
+        }
+      }
+    },
+    "probe_retry": {
+      "ok": true,
+      "latency_ms": 71,
+      "http_status": 200,
+      "request_id": 7,
+      "error_code": null,
+      "error_category": null,
+      "attempts_made": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"status\": \"retry-ok\",\n  \"attempt\": 4\n}"
+            }
+          ],
+          "structuredContent": {
+            "status": "retry-ok",
+            "attempt": 4
+          },
+          "meta": {
+            "status_code": 200,
+            "elapsed_ms": 12,
+            "attempts_made": 2
+          }
+        }
+      }
+    },
+    "validation_error": {
+      "ok": false,
+      "latency_ms": 25,
+      "http_status": 200,
+      "request_id": 8,
+      "error_code": -32602,
+      "error_category": "VALIDATION_ERROR",
+      "attempts_made": null,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "error": {
+          "code": -32602,
+          "message": "Tool arguments do not match the input schema.",
+          "data": {
+            "category": "VALIDATION_ERROR",
+            "validator": "required",
+            "validator_value": [
+              "user_id"
+            ],
+            "path": [],
+            "message": "'user_id' is a required property"
+          }
+        }
+      }
+    }
+  },
+  "concurrency_cases": [
+    {
+      "concurrency": 5,
+      "rounds": 1,
+      "request_count": 5,
+      "success_count": 5,
+      "failure_count": 0,
+      "success_rate": 1.0,
+      "avg_latency_ms": 103.2,
+      "p95_latency_ms": 132,
+      "max_latency_ms": 132
+    },
+    {
+      "concurrency": 10,
+      "rounds": 1,
+      "request_count": 10,
+      "success_count": 10,
+      "failure_count": 0,
+      "success_rate": 1.0,
+      "avg_latency_ms": 184.1,
+      "p95_latency_ms": 244,
+      "max_latency_ms": 244
+    },
+    {
+      "concurrency": 20,
+      "rounds": 1,
+      "request_count": 20,
+      "success_count": 20,
+      "failure_count": 0,
+      "success_rate": 1.0,
+      "avg_latency_ms": 404.65,
+      "p95_latency_ms": 603,
+      "max_latency_ms": 718
+    }
+  ],
+  "admin_status": {
+    "payload": {
+      "ok": true,
+      "gateway": {
+        "status": "ready",
+        "version": "20260326042809810425",
+        "config_hash": "eb6d096fa205b2db2d87f6d19c45a2db",
+        "tool_count": 6,
+        "loaded_at": "2026-03-26T04:28:09.810425+00:00",
+        "previous_version": "20260326042809528311"
+      },
+      "security": {
+        "auth": {
+          "gateway_key_enabled": true,
+          "admin_key_enabled": true
+        },
+        "rate_limit": {
+          "max_requests": 60,
+          "window_seconds": 60
+        }
+      },
+      "metrics": {
+        "total_calls": 129,
+        "success_calls": 121,
+        "failure_calls": 8,
+        "avg_latency_ms": 80.34,
+        "success_rate": 0.938,
+        "last_call_at": "2026-03-26T04:43:03.142711+00:00",
+        "by_tool": [
+          {
+            "tool_name": "get_user",
+            "call_count": 114,
+            "avg_latency_ms": 81.68,
+            "success_rate": 0.9825
+          },
+          {
+            "tool_name": "create_order",
+            "call_count": 5,
+            "avg_latency_ms": 8.0,
+            "success_rate": 0.8
+          },
+          {
+            "tool_name": "probe_failure",
+            "call_count": 3,
+            "avg_latency_ms": 9.0,
+            "success_rate": 0.0
+          },
+          {
+            "tool_name": "probe_slow",
+            "call_count": 3,
+            "avg_latency_ms": 319.67,
+            "success_rate": 1.0
+          },
+          {
+            "tool_name": "get_baidu_suggestion",
+            "call_count": 2,
+            "avg_latency_ms": 0.0,
+            "success_rate": 0.0
+          },
+          {
+            "tool_name": "probe_retry",
+            "call_count": 2,
+            "avg_latency_ms": 13.0,
+            "success_rate": 1.0
+          }
+        ],
+        "error_distribution": [
+          {
+            "error_type": "DOWNSTREAM_ERROR",
+            "count": 5
+          },
+          {
+            "error_type": "VALIDATION_ERROR",
+            "count": 3
+          }
+        ]
+      },
+      "audit_summary": {
+        "total_events": 20,
+        "failed_events": 0,
+        "last_published_at": "2026-03-26T04:28:09.813444+00:00"
+      },
+      "recent_audit": [
+        {
+          "version": "20260326042809810425",
+          "config_hash": "eb6d096fa205b2db2d87f6d19c45a2db",
+          "published_at": "2026-03-26T04:28:09.813444+00:00",
+          "status": "reloaded",
+          "error_message": null,
+          "rollback_from": "20260326042809528311"
+        },
+        {
+          "version": "20260326042809528311",
+          "config_hash": "eb6d096fa205b2db2d87f6d19c45a2db",
+          "published_at": "2026-03-26T04:28:09.531310+00:00",
+          "status": "reloaded",
+          "error_message": null,
+          "rollback_from": "20260326042809463560"
+        },
+        {
+          "version": "20260326042809463560",
+          "config_hash": "9d5ab4f8d6529f10be07f2aee0d76976",
+          "published_at": "2026-03-26T04:28:09.465308+00:00",
+          "status": "reloaded",
+          "error_message": null,
+          "rollback_from": "20260326042734387129"
+        },
+        {
+          "version": "20260326042734387129",
+          "config_hash": "eb6d096fa205b2db2d87f6d19c45a2db",
+          "published_at": "2026-03-26T04:27:34.388129+00:00",
+          "status": "loaded",
+          "error_message": null,
+          "rollback_from": null
+        },
+        {
+          "version": "20260326041757595758",
+          "config_hash": "eb6d096fa205b2db2d87f6d19c45a2db",
+          "published_at": "2026-03-26T04:17:57.596876+00:00",
+          "status": "loaded",
+          "error_message": null,
+          "rollback_from": null
+        },
+        {
+          "version": "20260313065006487784",
+          "config_hash": "eb6d096fa205b2db2d87f6d19c45a2db",
+          "published_at": "2026-03-13T06:50:06.489713+00:00",
+          "status": "reloaded",
+          "error_message": null,
+          "rollback_from": "20260313065003646327"
+        },
+        {
+          "version": "20260313065003646327",
+          "config_hash": "5df9e731eab7ddaff7170305b54d8ee2",
+          "published_at": "2026-03-13T06:50:03.649416+00:00",
+          "status": "reloaded",
+          "error_message": null,
+          "rollback_from": "20260313064927513609"
+        },
+        {
+          "version": "20260313064927513609",
+          "config_hash": "3f08f533d54f9a90d41b79371aa502c8",
+          "published_at": "2026-03-13T06:49:27.515641+00:00",
+          "status": "reloaded",
+          "error_message": null,
+          "rollback_from": "20260313063551745925"
+        },
+        {
+          "version": "20260313063551745925",
+          "config_hash": "82b5f5dd115f581e2b17196bc9e9740d",
+          "published_at": "2026-03-13T06:35:51.746646+00:00",
+          "status": "loaded",
+          "error_message": null,
+          "rollback_from": null
+        },
+        {
+          "version": "20260313062453281718",
+          "config_hash": "82b5f5dd115f581e2b17196bc9e9740d",
+          "published_at": "2026-03-13T06:24:53.282360+00:00",
+          "status": "loaded",
+          "error_message": null,
+          "rollback_from": null
+        }
+      ],
+      "recent_calls": [
+        {
+          "request_id": "375135a9217b431ebe461b725149bca7",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 183,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.052343+00:00"
+        },
+        {
+          "request_id": "9e76e796f643473ab390e6f23e9d4787",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 187,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.066594+00:00"
+        },
+        {
+          "request_id": "bb26b76d9f1742f289f4e7f94ffe61af",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 178,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.055875+00:00"
+        },
+        {
+          "request_id": "b377cd08c25a439b845787d897e9db6b",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 189,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.089206+00:00"
+        },
+        {
+          "request_id": "e996f44d111f4519b12fa265b55e044b",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 187,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.074838+00:00"
+        },
+        {
+          "request_id": "325aa77a12f348519f440e02b3f8bc3f",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 167,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.107182+00:00"
+        },
+        {
+          "request_id": "abc1912a68c443499fdc6e2dbc92afc6",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 143,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.130228+00:00"
+        },
+        {
+          "request_id": "c530b1c4167a4a44b442b2f28ba63d42",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 157,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.118501+00:00"
+        },
+        {
+          "request_id": "d64bea4af29841a9ba1e5a4b9ce3be71",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 114,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.142711+00:00"
+        },
+        {
+          "request_id": "4aa05458e7034464b2a0627aef8460ea",
+          "tool_name": "get_user",
+          "success": true,
+          "error_type": null,
+          "downstream_status": 200,
+          "latency_ms": 134,
+          "attempts_made": 1,
+          "created_at": "2026-03-26T04:43:03.134549+00:00"
+        }
+      ],
+      "openapi_preview_count": 2
+    },
+    "latency_ms": 34,
+    "http_status": 200
+  },
+  "reload_experiment": {
+    "skipped": false,
+    "added_tool_name": "probe_reload_temp",
+    "add_result": {
+      "payload": {
+        "ok": true,
+        "status": "ok",
+        "version": "20260326044303617536",
+        "previous_version": "20260326042809810425",
+        "tool_count": 7,
+        "loaded_at": "2026-03-26T04:43:03.617536+00:00",
+        "config_hash": "9d5ab4f8d6529f10be07f2aee0d76976",
+        "changes": {
+          "added": [
+            "probe_reload_temp"
+          ],
+          "removed": [],
+          "updated": [],
+          "unchanged_count": 6
+        },
+        "gateway": {
+          "status": "ready",
+          "version": "20260326044303617536",
+          "config_hash": "9d5ab4f8d6529f10be07f2aee0d76976",
+          "tool_count": 7,
+          "loaded_at": "2026-03-26T04:43:03.617536+00:00",
+          "previous_version": "20260326042809810425"
+        }
+      },
+      "latency_ms": 72,
+      "http_status": 200
+    },
+    "remove_result": {
+      "payload": {
+        "ok": true,
+        "status": "ok",
+        "version": "20260326044303659907",
+        "previous_version": "20260326044303617536",
+        "tool_count": 6,
+        "loaded_at": "2026-03-26T04:43:03.659907+00:00",
+        "config_hash": "eb6d096fa205b2db2d87f6d19c45a2db",
+        "changes": {
+          "added": [],
+          "removed": [
+            "probe_reload_temp"
+          ],
+          "updated": [],
+          "unchanged_count": 6
+        },
+        "gateway": {
+          "status": "ready",
+          "version": "20260326044303659907",
+          "config_hash": "eb6d096fa205b2db2d87f6d19c45a2db",
+          "tool_count": 6,
+          "loaded_at": "2026-03-26T04:43:03.659907+00:00",
+          "previous_version": "20260326044303617536"
+        }
+      },
+      "latency_ms": 41,
+      "http_status": 200
+    },
+    "change_summary": {
+      "added": [
+        "probe_reload_temp"
+      ],
+      "removed": [],
+      "updated": [],
+      "unchanged_count": 6
+    }
+  },
+  "summary": {
+    "generated_at": "2026-03-26T04:43:01.724931+00:00",
+    "functional_success_count": 4,
+    "functional_failure_count": 2,
+    "concurrency_case_count": 3,
+    "min_concurrency_success_rate": 1.0,
+    "max_concurrency_p95_latency_ms": 603
+  }
+}

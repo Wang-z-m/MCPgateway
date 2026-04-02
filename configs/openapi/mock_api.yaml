@@ -1,0 +1,46 @@
+openapi: 3.0.3
+info:
+  title: Mock Demo API
+  version: "1.0.0"
+servers:
+  - url: http://127.0.0.1:9001
+paths:
+  /users/{user_id}:
+    get:
+      operationId: get_user_from_openapi
+      summary: Get a user from OpenAPI
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: verbose
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: User detail
+  /orders:
+    post:
+      operationId: create_order_from_openapi
+      summary: Create an order from OpenAPI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                item_name:
+                  type: string
+                amount:
+                  type: number
+                customer_name:
+                  type: string
+              required: ["item_name", "amount", "customer_name"]
+      responses:
+        "200":
+          description: Order created

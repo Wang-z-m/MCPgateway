@@ -1,0 +1,43 @@
+tool_meta:
+  name: create_order
+  title: Create order
+  description: Create a demo order in the downstream REST API.
+  version: "1.0.0"
+  tags: ["demo", "mutation"]
+input_schema:
+  type: object
+  properties:
+    item_name:
+      type: string
+    amount:
+      type: number
+    customer_name:
+      type: string
+    request_source:
+      type: string
+  required: ["item_name", "amount", "customer_name"]
+  additionalProperties: false
+http_target:
+  method: POST
+  base_url: http://127.0.0.1:9001
+  path: /orders
+  timeout_seconds: 5
+  retry_count: 1
+request_mapping:
+  body_map:
+    item_name: item.name
+    amount: payment.amount
+    customer_name: customer.name
+  header_map:
+    request_source: X-Request-Source
+  constant_headers:
+    Content-Type: application/json
+response_mapping:
+  result_path: data
+  field_whitelist: ["order_id", "status", "amount", "customer"]
+  include_http_meta: true
+error_mapping:
+  status_map:
+    "400": VALIDATION_ERROR
+    "500": DOWNSTREAM_ERROR
+  default_code: DOWNSTREAM_ERROR

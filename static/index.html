@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Smart API Gateway</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--bg2:#1a1d27;--bg3:#242836;--bg4:#2e3346;
+  --fg:#e4e6ed;--fg2:#9ba1b5;--fg3:#6b7280;
+  --accent:#6366f1;--accent2:#818cf8;--accent-bg:rgba(99,102,241,.12);
+  --green:#22c55e;--green-bg:rgba(34,197,94,.12);
+  --red:#ef4444;--red-bg:rgba(239,68,68,.12);
+  --yellow:#eab308;--yellow-bg:rgba(234,179,8,.12);
+  --border:#2e3346;--radius:8px;--radius-lg:12px;
+}
+html{font-size:14px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;min-height:100vh}
+a{color:var(--accent2);text-decoration:none}
+
+/* Layout */
+.app-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;height:56px;gap:24px;position:sticky;top:0;z-index:100}
+.app-header h1{font-size:1.1rem;font-weight:600;white-space:nowrap}
+.app-header h1 span{color:var(--accent2)}
+.tab-bar{display:flex;gap:4px}
+.tab-btn{background:none;border:none;color:var(--fg2);padding:8px 16px;cursor:pointer;border-radius:var(--radius);font-size:.9rem;transition:all .15s}
+.tab-btn:hover{background:var(--bg3);color:var(--fg)}
+.tab-btn.active{background:var(--accent-bg);color:var(--accent2);font-weight:500}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.key-input{background:var(--bg3);border:1px solid var(--border);color:var(--fg);padding:6px 12px;border-radius:var(--radius);font-size:.85rem;width:220px;font-family:monospace}
+.key-input::placeholder{color:var(--fg3)}
+
+.main{max-width:1280px;margin:0 auto;padding:24px}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* Cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
+.card-label{font-size:.8rem;color:var(--fg3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.card-value{font-size:1.6rem;font-weight:700}
+.card-sub{font-size:.8rem;color:var(--fg2);margin-top:2px}
+.card-value.green{color:var(--green)}
+.card-value.red{color:var(--red)}
+.card-value.accent{color:var(--accent2)}
+
+/* Sections */
+.section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:20px;overflow:hidden}
+.section-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.section-title{font-size:.95rem;font-weight:600}
+.section-body{padding:20px;overflow-x:auto}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{text-align:left;padding:10px 12px;color:var(--fg3);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+
+/* Badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:.75rem;font-weight:500}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.badge-accent{background:var(--accent-bg);color:var(--accent2)}
+
+/* Buttons */
+.btn{padding:8px 16px;border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-secondary{background:var(--bg3);color:var(--fg);border:1px solid var(--border)}
+.btn-secondary:hover{background:var(--bg4)}
+.btn-danger{background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+.btn-danger:hover{background:rgba(239,68,68,.2)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Playground */
+.playground-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:900px){.playground-grid{grid-template-columns:1fr}}
+.pg-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column}
+.pg-panel-header{padding:14px 20px;border-bottom:1px solid var(--border);font-weight:600;font-size:.9rem;display:flex;align-items:center;justify-content:space-between}
+.pg-panel-body{padding:20px;flex:1;display:flex;flex-direction:column;gap:14px}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{font-size:.8rem;color:var(--fg2);font-weight:500}
+select,.text-input{background:var(--bg3);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:var(--radius);font-size:.85rem;font-family:inherit}
+select{cursor:pointer}
+textarea{background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:12px;border-radius:var(--radius);font-family:"Cascadia Code","Fira Code",monospace;font-size:.85rem;resize:vertical;min-height:200px;line-height:1.5}
+.response-box{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-family:"Cascadia Code","Fira Code",monospace;font-size:.82rem;white-space:pre-wrap;word-break:break-all;overflow-y:auto;max-height:520px;min-height:200px;flex:1;line-height:1.5;color:var(--fg2)}
+.response-meta{display:flex;gap:16px;font-size:.8rem;color:var(--fg3);padding-top:8px;border-top:1px solid var(--border)}
+.response-meta span{display:flex;align-items:center;gap:4px}
+
+/* Tool info */
+.tool-info{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:.82rem;color:var(--fg2)}
+.tool-info dt{color:var(--fg3);font-size:.75rem;margin-top:6px}
+.tool-info dt:first-child{margin-top:0}
+.tool-info dd{color:var(--fg);margin-left:0}
+
+/* Security grid */
+.security-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.security-item{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px}
+.security-item .label{font-size:.75rem;color:var(--fg3);margin-bottom:2px}
+.security-item .value{font-weight:600;font-size:.9rem}
+
+/* Loading */
+.loading{text-align:center;padding:32px;color:var(--fg3)}
+.spin{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent2);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Toast */
+.toast-container{position:fixed;top:68px;right:24px;z-index:200;display:flex;flex-direction:column;gap:8px}
+.toast{padding:12px 20px;border-radius:var(--radius);font-size:.85rem;font-weight:500;animation:slideIn .2s ease;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.toast-success{background:var(--green-bg);color:var(--green);border:1px solid rgba(34,197,94,.2)}
+.toast-error{background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+@keyframes slideIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <h1><span>MCP</span> Smart API Gateway</h1>
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="dashboard">仪表盘</button>
+    <button class="tab-btn" data-tab="playground">MCP 调试</button>
+  </nav>
+  <div class="header-right">
+    <input type="password" class="key-input" id="adminKeyInput" placeholder="Admin API Key" value="dev-admin-key">
+    <input type="password" class="key-input" id="gatewayKeyInput" placeholder="Gateway API Key" value="dev-api-key">
+  </div>
+</header>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<main class="main">
+  <!-- Dashboard Tab -->
+  <div class="tab-content active" id="tab-dashboard">
+    <div class="btn-group" style="margin-bottom:20px">
+      <button class="btn btn-primary" onclick="loadDashboard()">刷新数据</button>
+      <button class="btn btn-secondary" onclick="doReload()">重载配置</button>
+      <button class="btn btn-danger" onclick="doRollback()">回滚配置</button>
+    </div>
+
+    <div class="cards" id="statusCards">
+      <div class="loading"><span class="spin"></span> 加载中...</div>
+    </div>
+
+    <div class="cards" id="metricsCards"></div>
+
+    <!-- Security -->
+    <div class="section" id="securitySection" style="display:none">
+      <div class="section-header"><span class="section-title">安全配置</span></div>
+      <div class="section-body"><div class="security-grid" id="securityGrid"></div></div>
+    </div>
+
+    <!-- Tools -->
+    <div class="section" id="toolsSection" style="display:none">
+      <div class="section-header"><span class="section-title">已注册工具</span></div>
+      <div class="section-body"><table><thead><tr><th>工具名</th><th>标题</th><th>方法</th><th>路径</th><th>版本</th><th>标签</th><th>必填参数</th></tr></thead><tbody id="toolsTableBody"></tbody></table></div>
+    </div>
+
+    <!-- By-tool metrics -->
+    <div class="section" id="toolMetricsSection" style="display:none">
+      <div class="section-header"><span class="section-title">按工具调用统计</span></div>
+      <div class="section-body"><table><thead><tr><th>工具名</th><th>调用数</th><th>成功率</th><th>平均时延</th></tr></thead><tbody id="toolMetricsBody"></tbody></table></div>
+    </div>
+
+    <!-- Error distribution -->
+    <div class="section" id="errorSection" style="display:none">
+      <div class="section-header"><span class="section-title">错误分布</span></div>
+      <div class="section-body"><table><thead><tr><th>错误类型</th><th>数量</th></tr></thead><tbody id="errorTableBody"></tbody></table></div>
+    </div>
+
+    <!-- Recent calls -->
+    <div class="section" id="callsSection" style="display:none">
+      <div class="section-header"><span class="section-title">最近调用日志</span></div>
+      <div class="section-body"><table><thead><tr><th>Request ID</th><th>工具</th><th>状态</th><th>错误类型</th><th>下游状态码</th><th>时延</th><th>重试</th><th>时间</th></tr></thead><tbody id="callsTableBody"></tbody></table></div>
+    </div>
+
+    <!-- Audit -->
+    <div class="section" id="auditSection" style="display:none">
+      <div class="section-header"><span class="section-title">配置审计日志</span></div>
+      <div class="section-body"><table><thead><tr><th>版本</th><th>状态</th><th>配置哈希</th><th>回滚来源</th><th>错误信息</th><th>时间</th></tr></thead><tbody id="auditTableBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- Playground Tab -->
+  <div class="tab-content" id="tab-playground">
+    <div class="playground-grid">
+      <div class="pg-panel">
+        <div class="pg-panel-header">请求构造</div>
+        <div class="pg-panel-body">
+          <div class="form-group">
+            <label class="form-label">MCP 方法</label>
+            <select id="pgMethod" onchange="onMethodChange()">
+              <option value="initialize">initialize</option>
+              <option value="tools/list">tools/list</option>
+              <option value="tools/call" selected>tools/call</option>
+            </select>
+          </div>
+          <div class="form-group" id="pgToolGroup">
+            <label class="form-label">工具名称</label>
+            <select id="pgToolName" onchange="onToolSelect()">
+              <option value="">-- 加载中 --</option>
+            </select>
+          </div>
+          <div class="form-group" id="pgToolInfoGroup" style="display:none">
+            <label class="form-label">工具信息</label>
+            <dl class="tool-info" id="pgToolInfo"></dl>
+          </div>
+          <div class="form-group" id="pgArgsGroup">
+            <label class="form-label">参数 (JSON)</label>
+            <textarea id="pgArgs">{}</textarea>
+          </div>
+          <button class="btn btn-primary" onclick="sendMcpRequest()" id="pgSendBtn">发送请求</button>
+        </div>
+      </div>
+      <div class="pg-panel">
+        <div class="pg-panel-header">
+          <span>响应结果</span>
+          <span id="pgResponseStatus"></span>
+        </div>
+        <div class="pg-panel-body">
+          <div class="response-box" id="pgResponse">点击「发送请求」查看响应...</div>
+          <div class="response-meta" id="pgMeta" style="display:none">
+            <span id="pgLatency"></span>
+            <span id="pgRequestId"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const adminKey = () => $('adminKeyInput').value;
+const gatewayKey = () => $('gatewayKeyInput').value;
+
+let cachedTools = [];
+
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'playground' && cachedTools.length === 0) loadPlaygroundTools();
+  });
+});
+
+// Toast
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  $('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// Fetch helpers
+async function adminFetch(path, method = 'GET') {
+  const res = await fetch(path, { method, headers: { 'x-api-key': adminKey(), 'Content-Type': 'application/json' } });
+  return { data: await res.json(), headers: res.headers, status: res.status };
+}
+async function mcpFetch(body) {
+  const t0 = performance.now();
+  const res = await fetch('/mcp', { method: 'POST', headers: { 'x-api-key': gatewayKey(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const latency = Math.round(performance.now() - t0);
+  return { data: await res.json(), headers: res.headers, latency };
+}
+
+// Dashboard
+async function loadDashboard() {
+  $('statusCards').innerHTML = '<div class="loading"><span class="spin"></span> 加载中...</div>';
+  $('metricsCards').innerHTML = '';
+  try {
+    const [statusRes, toolsRes] = await Promise.all([adminFetch('/admin/status'), adminFetch('/admin/tools')]);
+    const s = statusRes.data;
+    const t = toolsRes.data;
+    if (!s.ok) { toast('加载失败: ' + (s.error || '未知错误'), 'error'); return; }
+    renderStatusCards(s.gateway);
+    renderMetricsCards(s.metrics);
+    renderSecurity(s.security);
+    renderTools(t.tools || []);
+    renderToolMetrics(s.metrics.by_tool || []);
+    renderErrors(s.metrics.error_distribution || []);
+    renderCalls(s.recent_calls || []);
+    renderAudit(s.recent_audit || []);
+  } catch (e) { toast('请求失败: ' + e.message, 'error'); $('statusCards').innerHTML = '<div class="loading">加载失败，请检查 API Key 和服务状态</div>'; }
+}
+
+function renderStatusCards(gw) {
+  $('statusCards').innerHTML = [
+    card('网关状态', `<span class="badge badge-green">${gw.status}</span>`, ''),
+    card('工具数量', gw.tool_count, '已注册', 'accent'),
+    card('当前版本', gw.version ? gw.version.slice(0, 14) : '-', gw.config_hash ? 'hash: ' + gw.config_hash.slice(0, 8) : ''),
+    card('最近加载', gw.loaded_at ? formatTime(gw.loaded_at) : '-', gw.previous_version ? '上一版本: ' + gw.previous_version.slice(0, 14) : '首次加载'),
+  ].join('');
+}
+
+function renderMetricsCards(m) {
+  const rate = m.total_calls ? (m.success_rate * 100).toFixed(1) + '%' : '-';
+  const rateClass = m.success_rate >= 0.95 ? 'green' : m.success_rate >= 0.8 ? '' : 'red';
+  $('metricsCards').innerHTML = [
+    card('总调用量', m.total_calls, m.last_call_at ? '最近: ' + formatTime(m.last_call_at) : '', 'accent'),
+    card('成功率', rate, `${m.success_calls} 成功 / ${m.failure_calls} 失败`, rateClass),
+    card('平均时延', m.avg_latency_ms + 'ms', '', m.avg_latency_ms > 1000 ? 'red' : ''),
+    card('失败数', m.failure_calls, '', m.failure_calls > 0 ? 'red' : 'green'),
+  ].join('');
+}
+
+function card(label, value, sub, cls = '') {
+  return `<div class="card"><div class="card-label">${label}</div><div class="card-value ${cls}">${value}</div>${sub ? `<div class="card-sub">${sub}</div>` : ''}</div>`;
+}
+
+function renderSecurity(sec) {
+  const s = $('securitySection'); s.style.display = '';
+  const items = [
+    { label: '网关鉴权', value: sec.auth.gateway_key_enabled ? '已启用' : '未启用', ok: sec.auth.gateway_key_enabled },
+    { label: '管理鉴权', value: sec.auth.admin_key_enabled ? '已启用' : '未启用', ok: sec.auth.admin_key_enabled },
+    { label: '限流窗口', value: sec.rate_limit.window_seconds + ' 秒' },
+    { label: '窗口请求上限', value: sec.rate_limit.max_requests },
+  ];
+  $('securityGrid').innerHTML = items.map(i =>
+    `<div class="security-item"><div class="label">${i.label}</div><div class="value">${i.ok !== undefined ? `<span class="badge ${i.ok ? 'badge-green' : 'badge-red'}">${i.value}</span>` : i.value}</div></div>`
+  ).join('');
+}
+
+function renderTools(tools) {
+  const s = $('toolsSection'); s.style.display = '';
+  $('toolsTableBody').innerHTML = tools.map(t =>
+    `<tr><td><code>${t.name}</code></td><td>${t.title}</td><td><span class="badge badge-accent">${t.method}</span></td><td><code>${t.path}</code></td><td>${t.version}</td><td>${(t.tags || []).map(g => `<span class="badge badge-yellow">${g}</span> `).join('')}</td><td>${(t.required_fields || []).join(', ') || '-'}</td></tr>`
+  ).join('') || '<tr><td colspan="7" style="color:var(--fg3)">暂无工具</td></tr>';
+}
+
+function renderToolMetrics(byTool) {
+  const s = $('toolMetricsSection'); s.style.display = byTool.length ? '' : 'none';
+  $('toolMetricsBody').innerHTML = byTool.map(t =>
+    `<tr><td><code>${t.tool_name}</code></td><td>${t.call_count}</td><td>${(t.success_rate * 100).toFixed(1)}%</td><td>${t.avg_latency_ms}ms</td></tr>`
+  ).join('');
+}
+
+function renderErrors(errors) {
+  const s = $('errorSection'); s.style.display = errors.length ? '' : 'none';
+  $('errorTableBody').innerHTML = errors.map(e =>
+    `<tr><td><span class="badge badge-red">${e.error_type}</span></td><td>${e.count}</td></tr>`
+  ).join('');
+}
+
+function renderCalls(calls) {
+  const s = $('callsSection'); s.style.display = calls.length ? '' : 'none';
+  $('callsTableBody').innerHTML = calls.map(c => {
+    const badge = c.success ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-red">失败</span>';
+    return `<tr><td><code style="font-size:.75rem">${c.request_id.slice(0,12)}</code></td><td>${c.tool_name}</td><td>${badge}</td><td>${c.error_type || '-'}</td><td>${c.downstream_status ?? '-'}</td><td>${c.latency_ms}ms</td><td>${c.attempts_made}</td><td>${formatTime(c.created_at)}</td></tr>`;
+  }).join('');
+}
+
+function renderAudit(events) {
+  const s = $('auditSection'); s.style.display = events.length ? '' : 'none';
+  const statusBadge = st => {
+    const map = { loaded: 'badge-green', reloaded: 'badge-accent', reload_failed: 'badge-red', rolled_back: 'badge-yellow' };
+    return `<span class="badge ${map[st] || 'badge-accent'}">${st}</span>`;
+  };
+  $('auditTableBody').innerHTML = events.map(e =>
+    `<tr><td><code style="font-size:.75rem">${e.version.slice(0,14)}</code></td><td>${statusBadge(e.status)}</td><td><code style="font-size:.75rem">${e.config_hash.slice(0,8)}</code></td><td>${e.rollback_from ? '<code>' + e.rollback_from.slice(0,14) + '</code>' : '-'}</td><td>${e.error_message || '-'}</td><td>${formatTime(e.published_at)}</td></tr>`
+  ).join('');
+}
+
+// Actions
+async function doReload() {
+  try {
+    const res = await adminFetch('/admin/reload', 'POST');
+    if (res.data.ok) { toast('配置重载成功，新版本: ' + res.data.version.slice(0,14)); loadDashboard(); }
+    else toast('重载失败: ' + res.data.error, 'error');
+  } catch (e) { toast('请求失败: ' + e.message, 'error'); }
+}
+async function doRollback() {
+  try {
+    const res = await adminFetch('/admin/rollback', 'POST');
+    if (res.data.ok) { toast('配置已回滚至版本: ' + res.data.version.slice(0,14)); loadDashboard(); }
+    else toast('回滚失败: ' + res.data.error, 'error');
+  } catch (e) { toast('请求失败: ' + e.message, 'error'); }
+}
+
+// Playground
+async function loadPlaygroundTools() {
+  try {
+    const res = await mcpFetch({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+    const tools = res.data.result?.tools || [];
+    cachedTools = tools;
+    const sel = $('pgToolName');
+    sel.innerHTML = tools.map(t => `<option value="${t.name}">${t.name} — ${t.title || ''}</option>`).join('');
+    if (tools.length) onToolSelect();
+  } catch (e) { toast('加载工具列表失败: ' + e.message, 'error'); }
+}
+
+function onMethodChange() {
+  const method = $('pgMethod').value;
+  const isCall = method === 'tools/call';
+  $('pgToolGroup').style.display = isCall ? '' : 'none';
+  $('pgArgsGroup').style.display = isCall ? '' : 'none';
+  $('pgToolInfoGroup').style.display = 'none';
+  if (isCall && cachedTools.length === 0) loadPlaygroundTools();
+  if (isCall && cachedTools.length > 0) onToolSelect();
+  if (!isCall) $('pgArgs').value = '{}';
+}
+
+function onToolSelect() {
+  const name = $('pgToolName').value;
+  const tool = cachedTools.find(t => t.name === name);
+  if (!tool) return;
+  $('pgToolInfoGroup').style.display = '';
+  $('pgToolInfo').innerHTML = `<dt>描述</dt><dd>${tool.description || '-'}</dd><dt>输入模式</dt><dd><code>${JSON.stringify(tool.inputSchema?.required || [], null, 0)}</code> (必填)</dd>`;
+  const schema = tool.inputSchema;
+  if (schema && schema.properties) {
+    const template = {};
+    for (const [key, prop] of Object.entries(schema.properties)) {
+      if (prop.type === 'integer' || prop.type === 'number') template[key] = 0;
+      else if (prop.type === 'boolean') template[key] = false;
+      else if (prop.type === 'array') template[key] = [];
+      else if (prop.type === 'object') template[key] = {};
+      else template[key] = '';
+    }
+    $('pgArgs').value = JSON.stringify(template, null, 2);
+  }
+}
+
+async function sendMcpRequest() {
+  const method = $('pgMethod').value;
+  const btn = $('pgSendBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+  $('pgResponse').textContent = '请求中...';
+  $('pgMeta').style.display = 'none';
+  $('pgResponseStatus').textContent = '';
+  try {
+    let params = {};
+    if (method === 'tools/call') {
+      let args = {};
+      try { args = JSON.parse($('pgArgs').value); } catch { toast('JSON 参数格式无效', 'error'); return; }
+      params = { name: $('pgToolName').value, arguments: args };
+    }
+    const body = { jsonrpc: '2.0', id: Date.now(), method, params };
+    const res = await mcpFetch(body);
+    const pretty = JSON.stringify(res.data, null, 2);
+    $('pgResponse').textContent = pretty;
+    const hasError = !!res.data.error;
+    $('pgResponseStatus').innerHTML = hasError ? '<span class="badge badge-red">ERROR</span>' : '<span class="badge badge-green">OK</span>';
+    $('pgMeta').style.display = 'flex';
+    $('pgLatency').textContent = '耗时: ' + res.latency + 'ms';
+    $('pgRequestId').textContent = 'Request-ID: ' + (res.headers.get('x-request-id') || '-');
+  } catch (e) {
+    $('pgResponse').textContent = '请求失败: ' + e.message;
+    $('pgResponseStatus').innerHTML = '<span class="badge badge-red">FAILED</span>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '发送请求';
+  }
+}
+
+// Utils
+function formatTime(iso) {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch { return iso; }
+}
+
+// Init
+loadDashboard();
+</script>
+</body>
+</html>

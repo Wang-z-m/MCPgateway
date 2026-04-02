@@ -1,0 +1,29 @@
+tool_meta:
+  name: probe_failure
+  title: Probe downstream failure
+  description: Trigger a downstream 500 error for fault-handling experiments.
+  version: "1.0.0"
+  tags: ["experiment", "failure"]
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+http_target:
+  method: GET
+  base_url: http://127.0.0.1:9001
+  path: /boom
+  timeout_seconds: 2
+  retry_count: 1
+request_mapping:
+  path_map: {}
+  query_map: {}
+  header_map: {}
+  body_map: {}
+response_mapping:
+  result_path: data
+  include_http_meta: true
+error_mapping:
+  status_map:
+    "500": DOWNSTREAM_ERROR
+  default_code: DOWNSTREAM_ERROR
+  expose_downstream_body: true

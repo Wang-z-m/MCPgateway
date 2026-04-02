@@ -1,0 +1,39 @@
+tool_meta:
+  name: get_user
+  title: Get user profile
+  description: Query a user profile from the downstream REST API.
+  version: "1.0.0"
+  tags: ["demo", "query"]
+input_schema:
+  type: object
+  properties:
+    user_id:
+      type: integer
+      description: Numeric user identifier.
+    verbose:
+      type: boolean
+      description: Whether to request verbose output.
+  required: ["user_id"]
+  additionalProperties: false
+http_target:
+  method: GET
+  base_url: http://127.0.0.1:9001
+  path: /users/{user_id}
+  timeout_seconds: 5
+  retry_count: 1
+request_mapping:
+  path_map:
+    user_id: user_id
+  query_map:
+    verbose: verbose
+response_mapping:
+  result_path: data
+  field_whitelist: ["id", "name", "email", "role"]
+  include_http_meta: true
+  text_template: "用户 {name} 的邮箱是 {email}，角色为 {role}。"
+error_mapping:
+  status_map:
+    "404": DOWNSTREAM_ERROR
+    "500": DOWNSTREAM_ERROR
+  default_code: DOWNSTREAM_ERROR
+  expose_downstream_body: true

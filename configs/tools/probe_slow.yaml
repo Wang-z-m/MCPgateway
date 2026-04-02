@@ -1,0 +1,28 @@
+tool_meta:
+  name: probe_slow
+  title: Probe slow downstream
+  description: Trigger a slow but successful downstream response for experiment use.
+  version: "1.0.0"
+  tags: ["experiment", "latency"]
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+http_target:
+  method: GET
+  base_url: http://127.0.0.1:9001
+  path: /slow
+  timeout_seconds: 2
+  retry_count: 1
+request_mapping:
+  path_map: {}
+  query_map: {}
+  header_map: {}
+  body_map: {}
+response_mapping:
+  result_path: data
+  include_http_meta: true
+error_mapping:
+  status_map:
+    "500": DOWNSTREAM_ERROR
+  default_code: DOWNSTREAM_ERROR

@@ -1,0 +1,41 @@
+tool_meta:
+  name: get_baidu_suggestion
+  title: Get Baidu suggestion
+  description: Query suggestion list from Baidu public endpoint.
+  version: "1.0.0"
+  tags: ["real-api", "china", "search"]
+input_schema:
+  type: object
+  properties:
+    keyword:
+      type: string
+      description: The query keyword for Baidu suggestion.
+  required: ["keyword"]
+  additionalProperties: false
+http_target:
+  method: GET
+  base_url: https://www.baidu.com
+  path: /sugrec?prod=pc
+  timeout_seconds: 8
+  retry_count: 1
+request_mapping:
+  path_map: {}
+  query_map:
+    keyword: wd
+  header_map: {}
+  body_map: {}
+  constant_headers: {}
+response_mapping:
+  result_path: g
+  field_whitelist: []
+  include_http_meta: true
+error_mapping:
+  status_map:
+    "400": DOWNSTREAM_ERROR
+    "403": DOWNSTREAM_ERROR
+    "429": DOWNSTREAM_ERROR
+    "500": DOWNSTREAM_ERROR
+    "502": DOWNSTREAM_ERROR
+    "503": DOWNSTREAM_ERROR
+  default_code: DOWNSTREAM_ERROR
+  expose_downstream_body: true
