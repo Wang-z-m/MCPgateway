@@ -1,5 +1,7 @@
 # MCP Smart API Gateway
 
+简介：
+
 一个基于 `FastAPI + SQLite + YAML` 的配置驱动型 MCP 到 REST 智能 API 适配网关。
 
 ## 启动
