@@ -63,8 +63,11 @@ def test_downstream_error_is_normalized(tmp_path: Path) -> None:
             },
         )
         payload = response.json()
-        assert payload["error"]["code"] == -32050
-        assert payload["error"]["data"]["downstream_status"] == 500
+        result = payload["result"]
+        assert result["isError"] is True
+        text = result["content"][0]["text"]
+        assert "DOWNSTREAM_ERROR" in text
+        assert "500" in text
 
 
 def test_rate_limit_is_enforced(tmp_path: Path) -> None:

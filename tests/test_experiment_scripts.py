@@ -73,6 +73,27 @@ def test_summarize_rpc_case_error() -> None:
     assert summary["attempts_made"] is None
 
 
+def test_summarize_rpc_case_tool_error_via_is_error() -> None:
+    case = {
+        "payload": {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "result": {
+                "content": [{"type": "text", "text": "[DOWNSTREAM_ERROR] HTTP 500.\ndownstream_status: 500"}],
+                "isError": True,
+            },
+        },
+        "latency_ms": 12,
+        "http_status": 200,
+    }
+    summary = summarize_rpc_case(case)
+
+    assert summary["ok"] is False
+    assert summary["error_code"] is None
+    assert summary["error_category"] == "DOWNSTREAM_ERROR"
+    assert summary["attempts_made"] is None
+
+
 def _make_sample_report() -> dict:
     return {
         "generated_at": "2026-03-10T00:00:00+00:00",
@@ -92,7 +113,7 @@ def _make_sample_report() -> dict:
                 "latency_ms": 12,
                 "http_status": 200,
                 "request_id": 2,
-                "error_code": -32050,
+                "error_code": None,
                 "error_category": "DOWNSTREAM_ERROR",
                 "attempts_made": None,
                 "payload": {},

@@ -16,6 +16,8 @@ from app.core.adaptation_engine import AdaptationEngine
 
 SUPPORTED_METHODS = ("initialize", "notifications/initialized", "tools/list", "tools/call")
 
+_TOOL_EXEC_ERROR_CATEGORIES = frozenset({"DOWNSTREAM_ERROR", "TIMEOUT_ERROR", "INTERNAL_ERROR"})
+
 
 class McpService:
     def __init__(
@@ -57,7 +59,12 @@ class McpService:
             if request.method == "tools/call":
                 params = ToolCallParams.model_validate(request.params or {})
                 tool = self.registry.get_tool(params.name)
-                result = await self.adaptation_engine.execute_tool(tool, params.arguments)
+                try:
+                    result = await self.adaptation_engine.execute_tool(tool, params.arguments)
+                except GatewayError as exc:
+                    if exc.category in _TOOL_EXEC_ERROR_CATEGORIES:
+                        return self._tool_error_result(request.id, exc)
+                    raise
                 return self._success(request.id, result)
             raise gateway_error(
                 "TOOL_NOT_FOUND",
@@ -81,6 +88,22 @@ class McpService:
 
     def _success(self, request_id: str | int | None, result: Any) -> dict[str, Any]:
         return JsonRpcResponse(id=request_id, result=result).model_dump(exclude_none=True)
+
+    def _tool_error_result(
+        self, request_id: str | int | None, error: GatewayError
+    ) -> dict[str, Any]:
+        """Return a tool-execution failure as a normal result with ``isError``
+        instead of a JSON-RPC error, so that MCP clients can distinguish
+        protocol errors from tool failures."""
+        parts = [f"[{error.category}] {error.message}"]
+        for key in ("downstream_status", "elapsed_ms", "downstream_message", "detail"):
+            value = error.data.get(key)
+            if value is not None:
+                parts.append(f"{key}: {value}")
+        return self._success(request_id, {
+            "content": [{"type": "text", "text": "\n".join(parts)}],
+            "isError": True,
+        })
 
     def _error(self, request_id: str | int | None, error: GatewayError) -> dict[str, Any]:
         return JsonRpcResponse(

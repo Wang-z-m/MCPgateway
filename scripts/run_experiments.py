@@ -67,14 +67,33 @@ def summarize_rpc_case(case: dict[str, Any]) -> dict[str, Any]:
     payload = case["payload"]
     error = payload.get("error")
     result = payload.get("result")
+    is_tool_error = isinstance(result, dict) and result.get("isError") is True
+    ok = error is None and not is_tool_error
+
+    error_code: int | None = None
+    error_category: str | None = None
+
+    if error:
+        error_code = error.get("code")
+        error_category = (error.get("data") or {}).get("category")
+    elif is_tool_error:
+        content = result.get("content") or []
+        text = content[0].get("text", "") if content and isinstance(content[0], dict) else ""
+        if text.startswith("[") and "]" in text:
+            error_category = text[1 : text.index("]")]
+
+    attempts_made = None
+    if result and not is_tool_error:
+        attempts_made = (result.get("meta") or {}).get("attempts_made")
+
     return {
-        "ok": error is None,
+        "ok": ok,
         "latency_ms": case["latency_ms"],
         "http_status": case["http_status"],
         "request_id": payload.get("id"),
-        "error_code": error.get("code") if error else None,
-        "error_category": (error.get("data") or {}).get("category") if error else None,
-        "attempts_made": (result.get("meta") or {}).get("attempts_made") if result else None,
+        "error_code": error_code,
+        "error_category": error_category,
+        "attempts_made": attempts_made,
         "payload": payload,
     }
 
@@ -94,7 +113,9 @@ def run_concurrency_case(
             method="tools/call",
             params={"name": "get_user", "arguments": {"user_id": index + 1}},
         )
-        return ("result" in case["payload"], case["latency_ms"])
+        result = case["payload"].get("result")
+        ok = isinstance(result, dict) and not result.get("isError", False)
+        return (ok, case["latency_ms"])
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         results = list(executor.map(task, range(request_count)))
