@@ -1,9 +1,9 @@
 tool_meta:
   name: probe_retry
-  title: Probe retry scenario
-  description: Trigger a flaky downstream endpoint to verify idempotent retry behavior.
+  title: 重试探测
+  description: 触发一个不稳定的下游接口，用于验证幂等请求的自动重试机制。
   version: "1.0.0"
-  tags: ["experiment", "retry"]
+  tags: ["实验", "重试"]
 input_schema:
   type: object
   properties: {}

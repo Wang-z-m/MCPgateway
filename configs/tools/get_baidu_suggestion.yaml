@@ -1,9 +1,9 @@
 tool_meta:
   name: get_baidu_suggestion
-  title: Get Baidu suggestion
-  description: Query suggestion list from Baidu public endpoint.
+  title: 百度搜索建议
+  description: 从百度公开接口获取搜索关键词的联想建议列表。
   version: "1.0.0"
-  tags: ["real-api", "china", "search"]
+  tags: ["搜索", "百度", "联想"]
 input_schema:
   type: object
   properties:

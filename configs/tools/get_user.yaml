@@ -1,9 +1,9 @@
 tool_meta:
   name: get_user
-  title: Get user profile
-  description: Query a user profile from the downstream REST API.
+  title: 查询用户信息
+  description: 根据用户ID查询用户的基本信息，包括姓名、邮箱、部门和角色。
   version: "1.0.0"
-  tags: ["demo", "query"]
+  tags: ["用户", "查询"]
 input_schema:
   type: object
   properties:

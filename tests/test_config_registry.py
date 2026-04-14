@@ -71,7 +71,7 @@ async def test_registry_status_exposes_previous_version_after_reload(tmp_path: P
     create_order_path = config_dir / "create_order.yaml"
     create_order_content = create_order_path.read_text(encoding="utf-8")
     create_order_path.write_text(
-        create_order_content.replace("Create order", "Create order v2"),
+        create_order_content.replace("创建订单", "创建订单v2"),
         encoding="utf-8",
     )
 
@@ -130,7 +130,7 @@ async def test_registry_rollback_restores_previous_snapshot(tmp_path: Path) -> N
     v1_hash = registry.status()["config_hash"]
 
     (config_dir / "get_user.yaml").write_text(
-        (config_dir / "get_user.yaml").read_text(encoding="utf-8").replace("Get user profile", "Get user v2"),
+        (config_dir / "get_user.yaml").read_text(encoding="utf-8").replace("查询用户信息", "查询用户信息v2"),
         encoding="utf-8",
     )
     await registry.reload()

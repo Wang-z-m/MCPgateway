@@ -1,9 +1,9 @@
 tool_meta:
   name: probe_failure
-  title: Probe downstream failure
-  description: Trigger a downstream 500 error for fault-handling experiments.
+  title: 故障探测
+  description: 触发下游接口返回500错误，用于验证网关的故障处理与错误归一能力。
   version: "1.0.0"
-  tags: ["experiment", "failure"]
+  tags: ["实验", "故障"]
 input_schema:
   type: object
   properties: {}

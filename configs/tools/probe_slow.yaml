@@ -1,9 +1,9 @@
 tool_meta:
   name: probe_slow
-  title: Probe slow downstream
-  description: Trigger a slow but successful downstream response for experiment use.
+  title: 慢响应探测
+  description: 触发一个响应缓慢但最终成功的下游接口，用于测试超时与延迟场景。
   version: "1.0.0"
-  tags: ["experiment", "latency"]
+  tags: ["实验", "延迟"]
 input_schema:
   type: object
   properties: {}
