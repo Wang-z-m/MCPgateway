@@ -4,6 +4,8 @@ tool_meta:
   description: 触发一个响应缓慢但最终成功的下游接口，用于测试超时与延迟场景。
   version: "1.0.0"
   tags: ["实验", "延迟"]
+  category: "system"
+  tier: "secondary"
 input_schema:
   type: object
   properties: {}

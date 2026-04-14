@@ -4,6 +4,8 @@ tool_meta:
   description: 在下游系统中创建一笔新订单，需提供商品名称、金额和客户姓名。
   version: "1.0.0"
   tags: ["订单", "创建"]
+  category: "order"
+  tier: "primary"
 input_schema:
   type: object
   properties:

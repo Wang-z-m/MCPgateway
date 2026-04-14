@@ -207,3 +207,25 @@ def test_http_target_rejects_negative_retry_count() -> None:
 def test_http_target_rejects_path_without_leading_slash() -> None:
     with pytest.raises(ValidationError, match="start with"):
         HttpTarget(method="GET", base_url="http://localhost", path="users")
+
+
+def test_tool_meta_category_defaults_to_none() -> None:
+    from app.models.tool_config import ToolMeta
+    meta = ToolMeta(name="test", title="Test", description="Test tool.")
+    assert meta.category is None
+
+
+def test_tool_meta_tier_defaults_to_primary() -> None:
+    from app.models.tool_config import ToolMeta
+    meta = ToolMeta(name="test", title="Test", description="Test tool.")
+    assert meta.tier == "primary"
+
+
+def test_tool_meta_explicit_category_and_tier() -> None:
+    from app.models.tool_config import ToolMeta
+    meta = ToolMeta(
+        name="test", title="Test", description="Test tool.",
+        category="finance", tier="secondary",
+    )
+    assert meta.category == "finance"
+    assert meta.tier == "secondary"

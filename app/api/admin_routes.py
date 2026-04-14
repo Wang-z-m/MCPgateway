@@ -117,6 +117,11 @@ async def gateway_status(request: Request) -> JSONResponse:
                 "openapi_preview_count": len(
                     request.app.state.config_loader.preview_openapi_tools()
                 ),
+                **(
+                    {"discovery": request.app.state.discovery_engine.describe()}
+                    if getattr(request.app.state, "discovery_engine", None)
+                    else {}
+                ),
             }
         )
     except GatewayError as exc:

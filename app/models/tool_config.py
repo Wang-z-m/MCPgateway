@@ -11,6 +11,8 @@ class ToolMeta(BaseModel):
     description: str
     version: str = "1.0.0"
     tags: list[str] = Field(default_factory=list)
+    category: str | None = None
+    tier: str = "primary"
 
 
 class HttpTarget(BaseModel):

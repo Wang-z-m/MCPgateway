@@ -4,6 +4,8 @@ tool_meta:
   description: 从百度公开接口获取搜索关键词的联想建议列表。
   version: "1.0.0"
   tags: ["搜索", "百度", "联想"]
+  category: "search"
+  tier: "primary"
 input_schema:
   type: object
   properties:

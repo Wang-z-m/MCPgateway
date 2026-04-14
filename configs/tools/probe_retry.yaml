@@ -4,6 +4,8 @@ tool_meta:
   description: 触发一个不稳定的下游接口，用于验证幂等请求的自动重试机制。
   version: "1.0.0"
   tags: ["实验", "重试"]
+  category: "system"
+  tier: "secondary"
 input_schema:
   type: object
   properties: {}

@@ -34,6 +34,13 @@ class Settings:
     session_ttl_seconds: int = 1800
     project_name: str = "mcp-smart-api-gateway"
     project_version: str = "0.1.0"
+    discovery_default_top_k: int = 5
+    discovery_max_top_k: int = 20
+    discovery_score_threshold: float = 0.05
+    discovery_tfidf_max_features: int = 5000
+    discovery_fallback_on_empty: bool = True
+    discovery_rate_limit_max: int = 10
+    discovery_rate_limit_window: int = 60
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -58,6 +65,27 @@ class Settings:
             ),
             project_name=os.getenv("MCP_GATEWAY_NAME", "mcp-smart-api-gateway"),
             project_version=os.getenv("MCP_GATEWAY_VERSION", "0.1.0"),
+            discovery_default_top_k=int(
+                os.getenv("MCP_GATEWAY_DISCOVERY_DEFAULT_TOP_K", "5")
+            ),
+            discovery_max_top_k=int(
+                os.getenv("MCP_GATEWAY_DISCOVERY_MAX_TOP_K", "20")
+            ),
+            discovery_score_threshold=float(
+                os.getenv("MCP_GATEWAY_DISCOVERY_SCORE_THRESHOLD", "0.05")
+            ),
+            discovery_tfidf_max_features=int(
+                os.getenv("MCP_GATEWAY_DISCOVERY_TFIDF_MAX_FEATURES", "5000")
+            ),
+            discovery_fallback_on_empty=os.getenv(
+                "MCP_GATEWAY_DISCOVERY_FALLBACK_ON_EMPTY", "true"
+            ).lower() in ("true", "1", "yes"),
+            discovery_rate_limit_max=int(
+                os.getenv("MCP_GATEWAY_DISCOVERY_RATE_LIMIT_MAX", "10")
+            ),
+            discovery_rate_limit_window=int(
+                os.getenv("MCP_GATEWAY_DISCOVERY_RATE_LIMIT_WINDOW", "60")
+            ),
         )
 
     def with_base_dir(self, base_dir: Path) -> "Settings":
@@ -75,4 +103,11 @@ class Settings:
             session_ttl_seconds=self.session_ttl_seconds,
             project_name=self.project_name,
             project_version=self.project_version,
+            discovery_default_top_k=self.discovery_default_top_k,
+            discovery_max_top_k=self.discovery_max_top_k,
+            discovery_score_threshold=self.discovery_score_threshold,
+            discovery_tfidf_max_features=self.discovery_tfidf_max_features,
+            discovery_fallback_on_empty=self.discovery_fallback_on_empty,
+            discovery_rate_limit_max=self.discovery_rate_limit_max,
+            discovery_rate_limit_window=self.discovery_rate_limit_window,
         )

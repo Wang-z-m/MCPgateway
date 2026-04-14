@@ -82,7 +82,9 @@ async def mcp_endpoint(request: Request) -> JSONResponse | Response:
 
         if method == "initialize":
             rpc_request = JsonRpcRequest.model_validate(raw_body)
-            payload = await request.app.state.mcp_service.handle(rpc_request)
+            payload = await request.app.state.mcp_service.handle(
+                rpc_request, client_key=client_key
+            )
             init_params = raw_body.get("params") or {}
             session = await request.app.state.session_manager.create_session(
                 client_info=init_params.get("clientInfo"),
@@ -127,7 +129,9 @@ async def mcp_endpoint(request: Request) -> JSONResponse | Response:
             )
 
         rpc_request = JsonRpcRequest.model_validate(raw_body)
-        payload = await request.app.state.mcp_service.handle(rpc_request)
+        payload = await request.app.state.mcp_service.handle(
+            rpc_request, client_key=client_key
+        )
         response = JSONResponse(payload)
         if rate_limit_status is not None:
             _apply_rate_limit_headers(

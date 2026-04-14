@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from pydantic import ValidationError
+
+from app.core.discovery_engine import SEARCH_APIS_SCHEMA, ToolDiscoveryEngine
 from app.core.error_mapper import (
     JSONRPC_INVALID_REQUEST,
     JSONRPC_INVALID_PARAMS,
@@ -9,14 +13,20 @@ from app.core.error_mapper import (
     gateway_error,
 )
 from app.core.errors import GatewayError
+from app.core.rate_limit import SlidingWindowRateLimiter
 from app.core.tool_registry import ToolRegistry
+from app.models.discovery_models import SearchApisParams
 from app.models.jsonrpc import InitializeParams, JsonRpcError, JsonRpcRequest, JsonRpcResponse, ToolCallParams
 from app.core.adaptation_engine import AdaptationEngine
+from app.utils.logging import log_json
 
+logger = logging.getLogger(__name__)
 
 SUPPORTED_METHODS = ("initialize", "notifications/initialized", "tools/list", "tools/call")
 
 _TOOL_EXEC_ERROR_CATEGORIES = frozenset({"DOWNSTREAM_ERROR", "TIMEOUT_ERROR", "INTERNAL_ERROR"})
+
+_SEARCH_APIS_NAME = "search_apis"
 
 
 class McpService:
@@ -27,13 +37,22 @@ class McpService:
         *,
         server_name: str,
         server_version: str,
+        discovery_engine: ToolDiscoveryEngine | None = None,
+        discovery_rate_limiter: SlidingWindowRateLimiter | None = None,
     ) -> None:
         self.registry = registry
         self.adaptation_engine = adaptation_engine
         self.server_name = server_name
         self.server_version = server_version
+        self.discovery_engine = discovery_engine
+        self.discovery_rate_limiter = discovery_rate_limiter
 
-    async def handle(self, request: JsonRpcRequest) -> dict[str, Any]:
+    async def handle(
+        self,
+        request: JsonRpcRequest,
+        *,
+        client_key: str | None = None,
+    ) -> dict[str, Any]:
         try:
             if request.method == "initialize":
                 params = InitializeParams.model_validate(request.params or {})
@@ -52,12 +71,11 @@ class McpService:
                     },
                 )
             if request.method == "tools/list":
-                return self._success(
-                    request.id,
-                    {"tools": [tool.mcp_tool_schema() for tool in self.registry.list_tools()]},
-                )
+                return self._build_tools_list(request.id)
             if request.method == "tools/call":
                 params = ToolCallParams.model_validate(request.params or {})
+                if params.name == _SEARCH_APIS_NAME:
+                    return self._handle_search_apis(request.id, params.arguments, client_key)
                 tool = self.registry.get_tool(params.name)
                 try:
                     result = await self.adaptation_engine.execute_tool(tool, params.arguments)
@@ -85,6 +103,63 @@ class McpService:
                     data={"detail": str(exc)},
                 ),
             )
+
+    def _build_tools_list(self, request_id: str | int | None) -> dict[str, Any]:
+        if self.discovery_engine is not None:
+            tools = self.registry.list_primary_tools()
+            schemas = [tool.mcp_tool_schema() for tool in tools]
+            schemas.append(SEARCH_APIS_SCHEMA)
+        else:
+            schemas = [tool.mcp_tool_schema() for tool in self.registry.list_tools()]
+        return self._success(request_id, {"tools": schemas})
+
+    def _handle_search_apis(
+        self,
+        request_id: str | int | None,
+        arguments: dict[str, Any],
+        client_key: str | None,
+    ) -> dict[str, Any]:
+        if self.discovery_engine is None:
+            raise gateway_error(
+                "INTERNAL_ERROR",
+                "Discovery engine is not available.",
+            )
+
+        if self.discovery_rate_limiter is not None and client_key:
+            try:
+                self.discovery_rate_limiter.enforce(client_key)
+            except GatewayError:
+                self.discovery_engine.increment_rate_limited()
+                log_json(logger, logging.WARNING, "search_apis_rate_limited", client_key=client_key)
+                return self._success(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": (
+                            "[RATE_LIMITED] API 搜索调用过于频繁，请稍后再试。"
+                            "如果多次搜索未找到合适工具，当前系统可能不支持该功能，"
+                            "请直接告知用户。"
+                        ),
+                    }],
+                    "isError": True,
+                })
+
+        try:
+            search_params = SearchApisParams.model_validate(arguments)
+        except ValidationError as exc:
+            raise gateway_error(
+                "VALIDATION_ERROR",
+                "Invalid search_apis parameters.",
+                data={"detail": exc.errors()},
+            ) from exc
+
+        primary_tools = self.registry.list_primary_tools()
+        result = self.discovery_engine.search(
+            query=search_params.query,
+            category=search_params.category,
+            top_k=search_params.top_k,
+            primary_tools=primary_tools,
+        )
+        return self._success(request_id, result)
 
     def _success(self, request_id: str | int | None, result: Any) -> dict[str, Any]:
         return JsonRpcResponse(id=request_id, result=result).model_dump(exclude_none=True)

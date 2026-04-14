@@ -18,6 +18,7 @@ from app.api.mcp_routes import router as mcp_router
 from app.core.adaptation_engine import AdaptationEngine
 from app.core.auth import ApiKeyAuth
 from app.core.config_loader import ConfigLoader, SUPPORTED_CONFIG_SUFFIXES
+from app.core.discovery_engine import ToolDiscoveryEngine
 from app.core.mcp_service import McpService
 from app.core.rate_limit import SlidingWindowRateLimiter
 from app.core.rest_connector import RestConnector
@@ -122,11 +123,23 @@ def create_app(
             app_settings.rate_limit_max_requests,
             app_settings.rate_limit_window_seconds,
         )
+
+        discovery_engine = ToolDiscoveryEngine(app_settings)
+        discovery_engine.rebuild_index(registry.list_tools())
+        registry.set_discovery_engine(discovery_engine)
+
+        discovery_rate_limiter = SlidingWindowRateLimiter(
+            app_settings.discovery_rate_limit_max,
+            app_settings.discovery_rate_limit_window,
+        )
+
         mcp_service = McpService(
             registry,
             adaptation_engine,
             server_name=app_settings.project_name,
             server_version=app_settings.project_version,
+            discovery_engine=discovery_engine,
+            discovery_rate_limiter=discovery_rate_limiter,
         )
         session_manager = SessionManager(
             ttl_seconds=app_settings.session_ttl_seconds,
@@ -143,6 +156,7 @@ def create_app(
         app.state.mcp_service = mcp_service
         app.state.session_manager = session_manager
         app.state.connector = rest_connector
+        app.state.discovery_engine = discovery_engine
 
         watcher_task = asyncio.create_task(
             _watch_config_dir(app_settings.config_dir, registry)

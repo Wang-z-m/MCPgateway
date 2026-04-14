@@ -71,7 +71,10 @@ def test_initialize_and_tools_list(tmp_path: Path) -> None:
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
         tool_names = {tool["name"] for tool in response.json()["result"]["tools"]}
-        assert {"get_user", "create_order"} <= tool_names
+        assert {"get_user", "create_order", "search_apis"} <= tool_names
+        assert "probe_slow" not in tool_names
+        assert "probe_failure" not in tool_names
+        assert "probe_retry" not in tool_names
 
 
 def test_tools_call_get_user_success(tmp_path: Path) -> None:
@@ -245,6 +248,7 @@ def test_tools_call_unknown_tool_returns_error(tmp_path: Path) -> None:
         assert payload["error"]["data"]["category"] == "TOOL_NOT_FOUND"
         assert "nonexistent_tool" in payload["error"]["data"]["tool_name"]
         assert "available_tools" in payload["error"]["data"]
+        assert "search_apis" not in payload["error"]["data"]["available_tools"]
 
 
 def test_tools_call_missing_params_name_returns_error(tmp_path: Path) -> None:

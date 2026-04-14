@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.core.config_loader import ConfigLoader
 from app.core.error_mapper import gateway_error
 from app.db.repositories import ConfigAuditRepository
 from app.models.tool_config import ToolConfig
+from app.utils.logging import log_json
+
+if TYPE_CHECKING:
+    from app.core.discovery_engine import ToolDiscoveryEngine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -31,6 +38,10 @@ class ToolRegistry:
         self.active_snapshot: ToolSnapshot | None = None
         self.previous_snapshot: ToolSnapshot | None = None
         self._reload_lock = asyncio.Lock()
+        self._discovery_engine: ToolDiscoveryEngine | None = None
+
+    def set_discovery_engine(self, engine: ToolDiscoveryEngine) -> None:
+        self._discovery_engine = engine
 
     async def load_initial_snapshot(self) -> None:
         async with self._reload_lock:
@@ -57,6 +68,7 @@ class ToolRegistry:
                     status="reloaded",
                     rollback_from=old_version,
                 )
+                self._notify_discovery_engine()
                 return {
                     "status": "ok",
                     "version": candidate.version,
@@ -87,6 +99,7 @@ class ToolRegistry:
             change_summary = self._build_change_summary(current, target)
             self.active_snapshot = target
             self.previous_snapshot = current
+            self._notify_discovery_engine()
             await self.audit_repository.record_event(
                 version=target.version,
                 config_hash=target.config_hash,
@@ -107,6 +120,9 @@ class ToolRegistry:
         if not self.active_snapshot:
             return []
         return list(self.active_snapshot.tools.values())
+
+    def list_primary_tools(self) -> list[ToolConfig]:
+        return [t for t in self.list_tools() if t.tool_meta.tier == "primary"]
 
     def describe_tools(self) -> list[dict[str, Any]]:
         return [self._serialize_tool(tool) for tool in self.list_tools()]
@@ -146,6 +162,18 @@ class ToolRegistry:
             "active_tool_count": len(active_tools),
             "preview_tool_count": len(self.loader.preview_openapi_tools()),
         }
+
+    def _notify_discovery_engine(self) -> None:
+        if self._discovery_engine is not None:
+            try:
+                self._discovery_engine.rebuild_index(self.list_tools())
+            except Exception as exc:
+                log_json(
+                    logger,
+                    logging.ERROR,
+                    "discovery_index_rebuild_failed",
+                    error=str(exc),
+                )
 
     def _build_snapshot(self) -> ToolSnapshot:
         tools, config_hash = self.loader.load_tools()

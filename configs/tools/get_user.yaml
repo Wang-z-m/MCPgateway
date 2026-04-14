@@ -4,6 +4,8 @@ tool_meta:
   description: 根据用户ID查询用户的基本信息，包括姓名、邮箱、部门和角色。
   version: "1.0.0"
   tags: ["用户", "查询"]
+  category: "user_management"
+  tier: "primary"
 input_schema:
   type: object
   properties:
