@@ -229,3 +229,9 @@ def test_tool_meta_explicit_category_and_tier() -> None:
     )
     assert meta.category == "finance"
     assert meta.tier == "secondary"
+
+
+def test_tool_meta_rejects_invalid_tier() -> None:
+    from app.models.tool_config import ToolMeta
+    with pytest.raises(ValidationError):
+        ToolMeta(name="test", title="Test", description="Test tool.", tier="invalid_tier")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -194,6 +195,27 @@ class TestCategoryFiltering:
         matched = result["structuredContent"]["matched_tools"]
         assert len(matched) == 0
 
+    def test_nonexistent_category_does_not_trigger_fallback(self):
+        engine = ToolDiscoveryEngine(_default_settings())
+        engine.rebuild_index(_sample_tools())
+        primary = [t for t in _sample_tools() if t.tool_meta.tier == "primary"]
+        result = engine.search("用户", category="nonexistent_category", primary_tools=primary)
+        sc = result["structuredContent"]
+        assert sc["fallback_triggered"] is False
+        assert "primary_tools" not in sc
+
+    def test_null_category_tools_excluded_from_category_filter(self):
+        tools = [
+            _make_tool("no_cat", "无分类工具", "没有分类的工具", category=None),
+            _make_tool("has_cat", "有分类工具", "有分类的工具", category="finance"),
+        ]
+        engine = ToolDiscoveryEngine(_default_settings())
+        engine.rebuild_index(tools)
+        result = engine.search("工具", category="finance")
+        matched = result["structuredContent"]["matched_tools"]
+        names = [t["name"] for t in matched]
+        assert "no_cat" not in names
+
     def test_no_category_searches_all(self):
         engine = ToolDiscoveryEngine(_default_settings())
         engine.rebuild_index(_sample_tools())
@@ -219,6 +241,18 @@ class TestFallbackBehavior:
         assert sc["fallback_triggered"] is True
         assert "get_user" in sc["primary_tools"]
         assert "create_order" in sc["primary_tools"]
+
+    def test_fallback_text_contains_tool_descriptions(self):
+        engine = ToolDiscoveryEngine(
+            _default_settings(discovery_score_threshold=0.99)
+        )
+        tools = _sample_tools()
+        engine.rebuild_index(tools)
+        primary = [t for t in tools if t.tool_meta.tier == "primary"]
+        result = engine.search("完全无关的量子计算", primary_tools=primary)
+        text = result["content"][0]["text"]
+        assert "get_user: " in text
+        assert "查询用户" in text
 
     def test_fallback_disabled_returns_no_primary(self):
         engine = ToolDiscoveryEngine(
@@ -300,6 +334,15 @@ class TestEngineStatistics:
         assert stats["total_searches"] == 1
         assert stats["index_tool_count"] == 5
         assert stats["last_index_built_at"] is not None
+
+    def test_describe_includes_avg_top_score(self):
+        engine = ToolDiscoveryEngine(_default_settings())
+        engine.rebuild_index(_sample_tools())
+        engine.search("查询用户")
+        engine.search("创建订单")
+        stats = engine.describe()
+        assert "avg_top_score" in stats
+        assert stats["avg_top_score"] > 0
 
     def test_rate_limited_count_incremented(self):
         engine = ToolDiscoveryEngine(_default_settings())
@@ -738,3 +781,90 @@ def test_admin_status_includes_discovery_stats(tmp_path: Path) -> None:
         assert "discovery" in status
         assert status["discovery"]["total_searches"] >= 1
         assert status["discovery"]["index_tool_count"] >= 1
+
+
+def test_engine_internal_error_degrades_to_fallback(tmp_path: Path) -> None:
+    """When the discovery engine raises an unexpected error, McpService
+    should degrade gracefully and return a fallback response instead of
+    a JSON-RPC INTERNAL_ERROR."""
+    with _build_integration_client(tmp_path) as client:
+        session_id = _do_initialize(client)
+
+        with patch.object(
+            client.app.state.discovery_engine,
+            "search",
+            side_effect=RuntimeError("simulated TF-IDF crash"),
+        ):
+            resp = client.post(
+                "/mcp",
+                headers={"x-api-key": "dev-api-key", "mcp-session-id": session_id},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 99,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_apis",
+                        "arguments": {"query": "查询用户"},
+                    },
+                },
+            )
+        payload = resp.json()
+        assert "error" not in payload
+        result = payload["result"]
+        assert "content" in result
+        assert result["structuredContent"]["fallback_triggered"] is True
+
+
+def test_search_apis_rate_limit_works_without_api_key(tmp_path: Path) -> None:
+    """Rate limiting should still work when client_key is None (anonymous)."""
+    mock_app = create_mock_app()
+    mock_http_client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=mock_app),
+        base_url="http://127.0.0.1:9001",
+    )
+    settings = Settings(
+        api_key="",
+        admin_api_key="dev-admin-key",
+        config_dir=Path("configs/tools"),
+        openapi_dir=Path("configs/openapi"),
+        sqlite_path=tmp_path / "gateway.db",
+        rate_limit_max_requests=200,
+        session_ttl_seconds=300,
+        discovery_rate_limit_max=2,
+        discovery_rate_limit_window=60,
+    )
+    app = create_app(settings, connector=RestConnector(client=mock_http_client))
+
+    with TestClient(app) as client:
+        session_id = _do_initialize(client)
+        for i in range(2):
+            client.post(
+                "/mcp",
+                headers={"mcp-session-id": session_id},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 300 + i,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_apis",
+                        "arguments": {"query": f"anon query {i}"},
+                    },
+                },
+            )
+
+        limited_resp = client.post(
+            "/mcp",
+            headers={"mcp-session-id": session_id},
+            json={
+                "jsonrpc": "2.0",
+                "id": 400,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_apis",
+                    "arguments": {"query": "should be limited"},
+                },
+            },
+        )
+        result = limited_resp.json()["result"]
+        assert result["isError"] is True
+        assert "RATE_LIMITED" in result["content"][0]["text"]

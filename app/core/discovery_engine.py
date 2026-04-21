@@ -104,6 +104,7 @@ class ToolDiscoveryEngine:
 
         self._total_searches: int = 0
         self._total_matched: int = 0
+        self._total_top_score: float = 0.0
         self._fallback_count: int = 0
         self._rate_limited_count: int = 0
         self._last_index_built_at: str | None = None
@@ -143,6 +144,7 @@ class ToolDiscoveryEngine:
         category: str | None = None,
         top_k: int | None = None,
         primary_tools: list[ToolConfig] | None = None,
+        request_id: str | int | None = None,
     ) -> dict[str, Any]:
         start = time.perf_counter()
         self._total_searches += 1
@@ -155,7 +157,7 @@ class ToolDiscoveryEngine:
 
         if vectorizer is None or matrix is None or not tools:
             result = self._build_fallback(query, category, primary_tools or [])
-            self._log_search(query, category, effective_top_k, result, start)
+            self._log_search(query, category, effective_top_k, result, start, request_id)
             return self._format_response(result)
 
         if category is not None:
@@ -166,8 +168,8 @@ class ToolDiscoveryEngine:
             filtered_indices = list(range(len(tools)))
 
         if not filtered_indices:
-            result = self._build_fallback(query, category, primary_tools or [])
-            self._log_search(query, category, effective_top_k, result, start)
+            result = self._build_empty_result(query, category, len(tools))
+            self._log_search(query, category, effective_top_k, result, start, request_id)
             return self._format_response(result)
 
         query_vector = vectorizer.transform([query])
@@ -184,7 +186,7 @@ class ToolDiscoveryEngine:
 
         if not candidates:
             result = self._build_fallback(query, category, primary_tools or [])
-            self._log_search(query, category, effective_top_k, result, start)
+            self._log_search(query, category, effective_top_k, result, start, request_id)
             return self._format_response(result)
 
         matched: list[dict[str, Any]] = []
@@ -199,6 +201,7 @@ class ToolDiscoveryEngine:
             })
 
         self._total_matched += len(matched)
+        self._total_top_score += matched[0]["relevance_score"]
 
         result = DiscoveryResult(
             matched_tools=matched,
@@ -207,7 +210,17 @@ class ToolDiscoveryEngine:
             category_filter=category,
             fallback_triggered=False,
         )
-        self._log_search(query, category, effective_top_k, result, start)
+        self._log_search(query, category, effective_top_k, result, start, request_id)
+        return self._format_response(result)
+
+    def build_fallback_response(
+        self,
+        query: str,
+        category: str | None = None,
+        primary_tools: list[ToolConfig] | None = None,
+    ) -> dict[str, Any]:
+        """Public fallback entry for callers (e.g. McpService exception handler)."""
+        result = self._build_fallback(query, category, primary_tools or [])
         return self._format_response(result)
 
     def _build_fallback(
@@ -223,7 +236,26 @@ class ToolDiscoveryEngine:
             total_indexed=len(self._indexed_tools),
             category_filter=category,
             fallback_triggered=self._fallback_on_empty,
-            primary_tools=[t.tool_meta.name for t in primary_tools],
+            primary_tools=[
+                {"name": t.tool_meta.name, "description": t.tool_meta.description}
+                for t in primary_tools
+            ],
+        )
+
+    def _build_empty_result(
+        self,
+        query: str,
+        category: str | None,
+        total_indexed: int,
+    ) -> DiscoveryResult:
+        """Return an empty match list without triggering fallback (category miss)."""
+        return DiscoveryResult(
+            matched_tools=[],
+            query=query,
+            total_indexed=total_indexed,
+            category_filter=category,
+            fallback_triggered=False,
+            primary_tools=[],
         )
 
     def _format_response(self, result: DiscoveryResult) -> dict[str, Any]:
@@ -239,7 +271,9 @@ class ToolDiscoveryEngine:
                 )
             text = "\n".join(lines)
         elif result.fallback_triggered and result.primary_tools:
-            tool_list = "\n".join(f"- {name}" for name in result.primary_tools)
+            tool_list = "\n".join(
+                f"- {t['name']}: {t['description']}" for t in result.primary_tools
+            )
             text = (
                 f"未找到与\u201c{result.query}\u201d相关的 API 工具。"
                 f"当前系统可能不支持此功能。\n\n"
@@ -256,7 +290,9 @@ class ToolDiscoveryEngine:
             "fallback_triggered": result.fallback_triggered,
         }
         if result.fallback_triggered:
-            structured["primary_tools"] = result.primary_tools
+            structured["primary_tools"] = [
+                t["name"] if isinstance(t, dict) else t for t in result.primary_tools
+            ]
 
         return {
             "content": [{"type": "text", "text": text}],
@@ -270,6 +306,7 @@ class ToolDiscoveryEngine:
         top_k: int,
         result: DiscoveryResult,
         start: float,
+        request_id: str | int | None = None,
     ) -> None:
         latency_ms = int((time.perf_counter() - start) * 1000)
         top_score = (
@@ -281,6 +318,7 @@ class ToolDiscoveryEngine:
             logger,
             logging.INFO,
             "search_apis_called",
+            request_id=request_id,
             query=query,
             category_filter=category,
             top_k=top_k,
@@ -295,11 +333,17 @@ class ToolDiscoveryEngine:
         self._rate_limited_count += 1
 
     def describe(self) -> dict[str, Any]:
+        non_fallback = self._total_searches - self._fallback_count
         return {
             "total_searches": self._total_searches,
             "avg_matched_tools": (
                 round(self._total_matched / self._total_searches, 1)
                 if self._total_searches
+                else 0.0
+            ),
+            "avg_top_score": (
+                round(self._total_top_score / non_fallback, 2)
+                if non_fallback > 0
                 else 0.0
             ),
             "fallback_count": self._fallback_count,

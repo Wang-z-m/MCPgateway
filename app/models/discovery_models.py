@@ -21,4 +21,4 @@ class DiscoveryResult:
     total_indexed: int = 0
     category_filter: str | None = None
     fallback_triggered: bool = False
-    primary_tools: list[str] = field(default_factory=list)
+    primary_tools: list[dict[str, str]] = field(default_factory=list)

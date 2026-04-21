@@ -125,9 +125,10 @@ class McpService:
                 "Discovery engine is not available.",
             )
 
-        if self.discovery_rate_limiter is not None and client_key:
+        if self.discovery_rate_limiter is not None:
+            effective_key = client_key or "__anonymous__"
             try:
-                self.discovery_rate_limiter.enforce(client_key)
+                self.discovery_rate_limiter.enforce(effective_key)
             except GatewayError:
                 self.discovery_engine.increment_rate_limited()
                 log_json(logger, logging.WARNING, "search_apis_rate_limited", client_key=client_key)
@@ -153,12 +154,21 @@ class McpService:
             ) from exc
 
         primary_tools = self.registry.list_primary_tools()
-        result = self.discovery_engine.search(
-            query=search_params.query,
-            category=search_params.category,
-            top_k=search_params.top_k,
-            primary_tools=primary_tools,
-        )
+        try:
+            result = self.discovery_engine.search(
+                query=search_params.query,
+                category=search_params.category,
+                top_k=search_params.top_k,
+                primary_tools=primary_tools,
+                request_id=request_id,
+            )
+        except Exception as exc:
+            log_json(logger, logging.ERROR, "search_apis_engine_error", error=str(exc))
+            result = self.discovery_engine.build_fallback_response(
+                query=search_params.query,
+                category=search_params.category,
+                primary_tools=primary_tools,
+            )
         return self._success(request_id, result)
 
     def _success(self, request_id: str | int | None, result: Any) -> dict[str, Any]:

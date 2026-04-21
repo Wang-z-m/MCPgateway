@@ -12,7 +12,7 @@ class ToolMeta(BaseModel):
     version: str = "1.0.0"
     tags: list[str] = Field(default_factory=list)
     category: str | None = None
-    tier: str = "primary"
+    tier: Literal["primary", "secondary", "utility"] = "primary"
 
 
 class HttpTarget(BaseModel):
