@@ -161,13 +161,17 @@ tool_meta:
 
 工具重要性/使用频率标识，用于渐进式披露：
 
-| 层级 | 含义 | 行为 |
-|------|------|------|
-| `primary` | 核心高频工具 | 出现在 `tools/list` 初始响应中，LLM 可直接调用 |
-| `secondary` | 辅助工具 | 不出现在初始列表中，需通过 `search_apis` 发现后才能调用 |
-| `utility` | 低频/调试工具 | 同上，仅在精确查询时被检索到 |
+| 层级          | 含义      | 行为                                  |
+| ----------- | ------- | ----------------------------------- |
+| `primary`   | 核心高频工具  | 出现在 `tools/list` 初始响应中，LLM 可直接调用    |
+| `secondary` | 辅助工具    | 不出现在初始列表中，需通过 `search_apis` 发现后才能调用 |
+| `utility`   | 低频/调试工具 | 同上，仅在精确查询时被检索到                      |
 
 未配置时默认 `"primary"`。
+
+**类型约束**：`ToolMeta.tier` 字段使用 `Literal["primary", "secondary", "utility"]` 类型注解。若 YAML 配置中填入其他值（例如拼写错误 `"praimry"`），Pydantic 将在配置加载阶段直接抛出 `ValidationError`。该错误由 `ToolRegistry._build_snapshot()` 沿调用链向上抛出：
+- **启动阶段**：`load_initial_snapshot()` 抛异常 → 应用启动失败（符合 fail-fast 原则）。
+- **热重载阶段**：`reload()` 捕获异常后通过 `audit_repository` 记录 `reload_failed` 事件，保留旧快照继续服务，索引不会重建，避免因单个配置错误导致工具被静默剔除。
 
 ### 5.2 `search_apis` Meta-Tool 定义
 
@@ -200,9 +204,15 @@ tool_meta:
     },
     "required": ["query"],
     "additionalProperties": false
+  },
+  "annotations": {
+    "version": "1.0.0",
+    "tags": ["system", "discovery"]
   }
 }
 ```
+
+Schema 定义位于 `app/core/discovery_engine.py` 的模块常量 `SEARCH_APIS_SCHEMA`，由 `McpService._build_tools_list()` 在 `discovery_engine` 注入时追加到 `tools/list` 响应末尾。`annotations.tags=["system", "discovery"]` 使客户端能够在 UI 上将该工具与业务工具区分显示（如以不同图标或分组展示）。
 
 #### Prompt Engineering 要点
 
@@ -216,15 +226,15 @@ tool_meta:
 
 在 `app/settings.py` 的 `Settings` 中新增发现相关参数（通过环境变量配置）：
 
-| 环境变量 | 默认值 | 说明 |
-|---------|--------|------|
-| `MCP_GATEWAY_DISCOVERY_DEFAULT_TOP_K` | `5` | `search_apis` 默认返回工具数 |
-| `MCP_GATEWAY_DISCOVERY_MAX_TOP_K` | `20` | top_k 最大允许值 |
-| `MCP_GATEWAY_DISCOVERY_SCORE_THRESHOLD` | `0.05` | 最低相关性评分阈值 |
-| `MCP_GATEWAY_DISCOVERY_TFIDF_MAX_FEATURES` | `5000` | TF-IDF 最大特征数 |
-| `MCP_GATEWAY_DISCOVERY_FALLBACK_ON_EMPTY` | `true` | 空结果时是否降级返回 primary 工具摘要 |
-| `MCP_GATEWAY_DISCOVERY_RATE_LIMIT_MAX` | `10` | `search_apis` 每窗口最大调用次数 |
-| `MCP_GATEWAY_DISCOVERY_RATE_LIMIT_WINDOW` | `60` | `search_apis` 限流窗口（秒） |
+| 环境变量                                       | 默认值    | 说明                      |
+| ------------------------------------------ | ------ | ----------------------- |
+| `MCP_GATEWAY_DISCOVERY_DEFAULT_TOP_K`      | `5`    | `search_apis` 默认返回工具数   |
+| `MCP_GATEWAY_DISCOVERY_MAX_TOP_K`          | `20`   | top_k 最大允许值             |
+| `MCP_GATEWAY_DISCOVERY_SCORE_THRESHOLD`    | `0.05` | 最低相关性评分阈值               |
+| `MCP_GATEWAY_DISCOVERY_TFIDF_MAX_FEATURES` | `5000` | TF-IDF 最大特征数            |
+| `MCP_GATEWAY_DISCOVERY_FALLBACK_ON_EMPTY`  | `true` | 空结果时是否降级返回 primary 工具摘要 |
+| `MCP_GATEWAY_DISCOVERY_RATE_LIMIT_MAX`     | `10`   | `search_apis` 每窗口最大调用次数 |
+| `MCP_GATEWAY_DISCOVERY_RATE_LIMIT_WINDOW`  | `60`   | `search_apis` 限流窗口（秒）   |
 
 ---
 
@@ -238,15 +248,16 @@ tool_meta:
 
 使用 jieba 分词库进行中文分词。自定义 analyzer 函数传入 scikit-learn 的 `TfidfVectorizer`。
 
-**重要**：当 `TfidfVectorizer` 接收自定义 `analyzer` 时，`ngram_range` 等参数会被忽略（scikit-learn 的设计行为）。因此 bigram 必须在 analyzer 内部自行生成：
+**重要**：当 `TfidfVectorizer` 接收自定义 `analyzer` 时，`ngram_range` 等参数会被忽略（scikit-learn 的设计行为）。因此 bigram 必须在 analyzer 内部自行生成。实现位于 `app/core/discovery_engine.py`，是模块级私有函数（单下划线前缀），不作为 `ToolDiscoveryEngine` 实例方法——它们是纯函数，不依赖引擎状态，便于单测与复用：
 
 ```python
+# app/core/discovery_engine.py（模块级）
 import re
 import jieba
 
 _WORD_RE = re.compile(r"\w")
 
-def chinese_analyzer(text: str) -> list[str]:
+def _chinese_analyzer(text: str) -> list[str]:
     raw_tokens = jieba.cut(text)
     tokens = [t for t in raw_tokens if _WORD_RE.search(t)]
     bigrams = [f"{tokens[i]}{tokens[i+1]}" for i in range(len(tokens) - 1)]
@@ -256,6 +267,7 @@ def chinese_analyzer(text: str) -> list[str]:
 `_WORD_RE.search(t)` 过滤掉空白和标点 token（如 `"，"` `"、"` `" "`），避免生成无意义的 bigram。
 
 分词效果示例：
+
 - `"查询用户信息"` → `["查询", "用户", "信息", "查询用户", "用户信息"]`
 - `"根据用户ID查询基本信息，包括姓名、邮箱"` → tokens: `["根据", "用户", "ID", "查询", "基本", "信息", "包括", "姓名", "邮箱"]`，bigrams: `["根据用户", "用户ID", "ID查询", "查询基本", "基本信息", "信息包括", "包括姓名", "姓名邮箱"]`（标点 `"，"` `"、"` 已被过滤）
 - `"创建订单"` → `["创建", "订单", "创建订单"]`
@@ -263,10 +275,11 @@ def chinese_analyzer(text: str) -> list[str]:
 
 ### 6.3 工具文档构建
 
-每个工具生成一个文本文档用于索引：
+每个工具生成一个文本文档用于索引。同样实现为模块级私有函数 `_build_document`：
 
 ```python
-def build_document(tool: ToolConfig) -> str:
+# app/core/discovery_engine.py（模块级）
+def _build_document(tool: ToolConfig) -> str:
     meta = tool.tool_meta
     parts = [
         meta.name,
@@ -280,7 +293,7 @@ def build_document(tool: ToolConfig) -> str:
     return " ".join(parts)
 ```
 
-名称重复出现一次以提供名称匹配的权重加成。
+名称重复出现一次以提供名称匹配的权重加成。另有模块级函数 `_simplify_schema(schema)` 负责将完整 `inputSchema` 压缩为 `"参数名: 类型 (必填?)"` 的简短形式，用于 `content[0].text` 中的参数提示（见 8.2 节响应示例的 `参数: {...}` 字段）。
 
 **语言一致性要求**：TF-IDF 基于精确词汇匹配计算相似度，不具备跨语言能力。工具的 `title` 和 `description` 必须使用与预期查询相同的语言书写。本项目面向中文用户，因此工具描述应使用中文。工具的 `name` 字段（如 `get_user`）保持英文，因为它是程序标识符而非自然语言描述。
 
@@ -304,11 +317,11 @@ tfidf_matrix = vectorizer.fit_transform(tool_documents)
 
 **参数说明**：
 
-| 参数 | 值 | 作用 |
-|------|---|------|
-| `analyzer` | `chinese_analyzer` | 使用 jieba 自定义分词 + bigram 生成（传入自定义 analyzer 后 `ngram_range` 等参数不生效，因此 bigram 由 analyzer 内部生成） |
-| `max_features` | `5000` | 限制词汇表大小，防止内存膨胀 |
-| `sublinear_tf` | `True` | 使用 `1+log(tf)` 平滑，避免高频词过度主导 |
+| 参数             | 值                  | 作用                                                                                          |
+| -------------- | ------------------ | ------------------------------------------------------------------------------------------- |
+| `analyzer`     | `chinese_analyzer` | 使用 jieba 自定义分词 + bigram 生成（传入自定义 analyzer 后 `ngram_range` 等参数不生效，因此 bigram 由 analyzer 内部生成） |
+| `max_features` | `5000`             | 限制词汇表大小，防止内存膨胀                                                                              |
+| `sublinear_tf` | `True`             | 使用 `1+log(tf)` 平滑，避免高频词过度主导                                                                 |
 
 **索引时机**：
 
@@ -327,13 +340,13 @@ scores = cosine_similarity(query_vector, tfidf_matrix).flatten()
 
 ### 6.6 评分特性
 
-| 特性 | 说明 |
-|------|------|
-| 中文支持 | jieba 分词，正确切分"查询用户"为"查询"+"用户" |
-| 标点过滤 | `_WORD_RE.search(t)` 在 bigram 生成前过滤空白与标点 token，避免产生无意义特征 |
+| 特性     | 说明                                                         |
+| ------ | ---------------------------------------------------------- |
+| 中文支持   | jieba 分词，正确切分"查询用户"为"查询"+"用户"                              |
+| 标点过滤   | `_WORD_RE.search(t)` 在 bigram 生成前过滤空白与标点 token，避免产生无意义特征   |
 | Bigram | 由 `chinese_analyzer` 内部基于过滤后的 token 列表生成，捕获"查询用户""创建订单"等短语 |
-| 子线性 TF | `sublinear_tf=True` 避免高频词过度主导 |
-| 名称加权 | 工具名重复出现，提升精确名称匹配的权重 |
+| 子线性 TF | `sublinear_tf=True` 避免高频词过度主导                              |
+| 名称加权   | 工具名重复出现，提升精确名称匹配的权重                                        |
 
 ---
 
@@ -354,14 +367,19 @@ LLM 缓存此列表，在后续对话中可直接调用 primary 工具或 `searc
 2. `McpService` 识别 `name="search_apis"`，拦截请求，**不转发给 `AdaptationEngine`**。
 3. 检查 `search_apis` 独立限流计数器。若超限，返回限流错误。
 4. 提取参数 `query`（必填）、`category`（可选）、`top_k`（可选，默认 5）。
-5. 调用 `ToolDiscoveryEngine.search(query, category, top_k)`：
-   a. 若指定 `category`，先从全量工具中过滤出该分类的工具。
+5. 调用 `ToolDiscoveryEngine.search(query=..., category=..., top_k=..., primary_tools=..., request_id=...)`（全部为关键字参数）。`request_id` 来源于 JSON-RPC 请求体的 `id` 字段，由 `McpService._handle_search_apis` 透传，用于结构化日志的请求追踪。
+   a. 若指定 `category`，先从全量工具中过滤出该分类的工具。**若该分类过滤后的索引列表为空（即 category 不存在任何已索引工具），直接返回 `matched_tools=[]` 且 `fallback_triggered=False` 的空结果，不进入 TF-IDF 计算、也不触发降级**（理由：这是用户显式约束未命中，降级到 primary 反而会对 LLM 产生误导。具体由 `_build_empty_result()` 构造，且不计入 `_fallback_count`）。
    b. 使用 TF-IDF 计算各工具与 `query` 的相关性评分。
    c. 过滤掉低于 `score_threshold` 的工具。
    d. 按评分降序排列，截取 `top_k` 个。
-   e. **若结果为空且 `fallback_on_empty=true`，降级返回 primary 工具摘要**。
+   e. **若 TF-IDF 匹配结果为空（未指定 category，或 category 命中后仍无工具达到阈值），进入降级分支**：调用 `_build_fallback()` 生成以 primary 工具摘要为兜底内容的 `DiscoveryResult`。其 `fallback_triggered` 字段严格取决于设置项 `discovery_fallback_on_empty`：若为 `True`，`fallback_triggered=True` 且在响应文本中列出 primary 工具；若为 `False`，`fallback_triggered=False` 且返回简短的"未找到"文本（不列工具）。无论哪种情况都增加 `_fallback_count`。
+   f. **匹配成功**：构造 `matched_tools` 列表（包含 `name/title/description/relevance_score/inputSchema`）并增加 `_matched_requests` 计数（用于 `avg_top_score` 的准确统计，见 13.2 节）。
 6. 将匹配结果格式化为 MCP `content`（包含工具名称、描述、参数 Schema、相关性评分）。
 7. 返回标准 `tools/call` 成功响应。
+
+**说明**：
+- `_handle_search_apis` 在调用 `search()` 时包裹了 `try/except Exception`，若引擎内部抛出任何未预期异常，直接调用 `ToolDiscoveryEngine.build_fallback_response(query, category, primary_tools)` 降级返回，并以 `event=search_apis_engine_error` 记录错误日志（含 `request_id`）。
+- `search()` 本身为**同步方法**——MCP 协议层的 `handle()` 虽然是 `async`，但路由到 `_handle_search_apis` 再进入 `search()` 的调用链全程无 `await`，不会让出事件循环。
 
 ### 7.3 业务工具调用流程（执行阶段，不变）
 
@@ -492,7 +510,38 @@ LLM 缓存此列表，在后续对话中可直接调用 primary 工具或 `searc
 
 降级时列出 primary 工具名和描述作为兜底，帮助 LLM 回归已知能力范围。
 
-### 8.4 `search_apis` 限流响应
+**内部数据结构 vs. 对外字段**：
+- `DiscoveryResult.primary_tools` 字段类型为 `list[dict[str, str]]`，每项形如 `{"name": "get_user", "description": "查询用户信息"}`，作为 `content[0].text` 拼接"名称 + 描述"列表的数据源。
+- 对外 `structuredContent.primary_tools` 仅投影为 `list[str]`（只含 `name`），保留机器可解析的最小字段、避免冗余。
+- 文本渲染格式：`"- {name}: {description}"`，每行一个工具。
+
+### 8.4 `search_apis` 分类未命中响应（无降级）
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "未找到与\"查询用户邮箱\"相关的 API 工具。当前系统可能不支持此功能。"
+      }
+    ],
+    "structuredContent": {
+      "matched_tools": [],
+      "query": "查询用户邮箱",
+      "total_indexed": 20,
+      "category_filter": "nonexistent_category",
+      "fallback_triggered": false
+    }
+  }
+}
+```
+
+当请求携带的 `category` 在索引中不存在时，返回空匹配结果且不触发降级。此时 `structuredContent` 不包含 `primary_tools` 字段（仅在 `fallback_triggered=true` 时注入），`content[0].text` 为简短提示，不展开 primary 工具列表——这样可避免把"分类错填"当作"查询失败"并误导 LLM 切换到 primary 工具。
+
+### 8.5 `search_apis` 限流响应
 
 ```json
 {
@@ -534,10 +583,12 @@ LLM 不一定遵守，但有统计层面的引导效果，成本为零。
 
 为 `search_apis` 设置独立的滑动窗口限流，与全局限流分开：
 
-- **限流维度**：按 client key（`x-api-key` 或客户端 IP）隔离
-- **默认配置**：每 60 秒最多 10 次
-- **超限行为**：返回 `isError: true` 的限流提示（见 8.4 节），而非 JSON-RPC error，确保 LLM 能理解并停止
-- **实现**：复用现有 `SlidingWindowRateLimiter` 的逻辑，`McpService` 在路由到发现引擎前检查
+- **限流维度**：按 client key 隔离。`mcp_routes.py` 在 `/mcp` 入口解析 `client_key` 时使用三级兜底：首选请求头 `x-api-key`；缺失时退化到 `request.client.host`（FastAPI 解析的远端 IP）；两者都不可得时退化到字符串 `"unknown"`。因此经由 HTTP 入口的请求，其 `client_key` 始终为非空字符串。
+- **McpService 层二次兜底（防御性编程）**：`McpService.handle()` 的 `client_key` 参数签名允许为 `None`，便于组件被其他调用方（单元测试、未来的内部调度）复用。为确保限流器在任何调用路径下都不因 key 缺失而失效，`_handle_search_apis` 内部再次用 `effective_key = client_key or "__anonymous__"` 兜底，随后以 `effective_key` 调用 `SlidingWindowRateLimiter.enforce()` 并写入 `search_apis_rate_limited` 日志的 `client_key` 字段。该兜底在当前 HTTP 入口路径下不会触发，但保障了组件自身的健壮性。
+- **检查时机**：在 `SearchApisParams` 参数校验之前。这样即使攻击者构造非法 `arguments` 也会先消耗限流配额，防止"用非法参数绕过限流"的攻击面。
+- **默认配置**：每 60 秒最多 10 次（`MCP_GATEWAY_DISCOVERY_RATE_LIMIT_MAX` / `MCP_GATEWAY_DISCOVERY_RATE_LIMIT_WINDOW`）。
+- **超限行为**：返回 `isError: true` 的限流提示（见 8.5 节），而非 JSON-RPC error，确保 LLM 能理解并停止；同时累计 `ToolDiscoveryEngine._rate_limited_count`（通过 `increment_rate_limited()` 公共方法），在 `/admin/status` 的 `discovery.rate_limited_count` 指标中对外暴露。
+- **实现**：复用现有 `SlidingWindowRateLimiter` 类，但在 `main.py` 中独立实例化（不与全局限流器共享计数桶），传入 `app/settings.py` 中专属的 `discovery_rate_limit_max` / `discovery_rate_limit_window` 配置。
 
 ### 9.3 无匹配时的自然终止
 
@@ -553,7 +604,7 @@ LLM 不一定遵守，但有统计层面的引导效果，成本为零。
 class ToolDiscoveryEngine:
     def rebuild_index(self, tools: list[ToolConfig]) -> None:
         # 1. 在临时变量中构建新索引
-        new_vectorizer = TfidfVectorizer(analyzer=chinese_analyzer, ...)
+        new_vectorizer = TfidfVectorizer(analyzer=_chinese_analyzer, ...)
         new_matrix = new_vectorizer.fit_transform(documents)
         new_tool_list = list(tools)
 
@@ -562,7 +613,7 @@ class ToolDiscoveryEngine:
         self._tfidf_matrix = new_matrix
         self._indexed_tools = new_tool_list
 
-    def search(self, query: str, ...) -> ...:
+    def search(self, query: str, ...) -> ...:  # 同步方法
         # 查询开头先将引用读到局部变量，确保本次查询全程使用同一版本索引
         vectorizer = self._vectorizer
         matrix = self._tfidf_matrix
@@ -571,7 +622,25 @@ class ToolDiscoveryEngine:
         ...
 ```
 
-查询时先将 `self._vectorizer` / `self._tfidf_matrix` / `self._indexed_tools` 读到局部变量，后续全程使用局部变量。这样即使查询执行中途发生了索引重建（async 上下文中经过 await 让出控制权），本次查询也始终使用同一版本的完整索引。
+**关键细节**：`ToolDiscoveryEngine.search()` 本身是**同步方法**，`rebuild_index()` 也是同步方法。在 asyncio 单事件循环环境下，两者不会在同一协程内交错执行。但并发安全策略仍有必要，因为：
+
+1. `rebuild_index()` 从 `ToolRegistry.reload()`（async 方法）内部调用，`reload()` 在 `_reload_lock` 下执行。与此同时，`search()` 从 `McpService._handle_search_apis` 调用，不持锁。
+2. 事件循环在两次 `await` 之间可能切换协程，因此 `search()` 入口读取属性与 `rebuild_index()` 写入属性之间的先后顺序**不可预期**。
+3. 采用"读取到局部变量"的策略后，`search()` 在进入循环体之前已把 `self._vectorizer / self._tfidf_matrix / self._indexed_tools` 三个引用"快照"到栈局部，即使本次查询后续被 rebuild_index 覆盖，也仍然使用整套旧索引完成计算，不会出现"用新 vectorizer 查旧 matrix"的半成品状态。
+
+### 10.1 `ToolDiscoveryEngine` 公共接口一览
+
+供 `McpService` / `ToolRegistry` / 管理接口调用的对外方法：
+
+| 方法 | 调用方 | 语义 |
+|------|--------|------|
+| `rebuild_index(tools)` | `ToolRegistry.load_initial_snapshot` / `reload` / `rollback` | 基于最新工具快照重建 TF-IDF 索引（原子替换）。空工具列表时清空索引，不抛异常 |
+| `search(query, category, top_k, primary_tools, request_id)` | `McpService._handle_search_apis` 正常路径 | 执行 TF-IDF 语义检索，返回 MCP `tools/call` 结果 dict（含 `content` + `structuredContent`） |
+| `build_fallback_response(query, category, primary_tools)` | `McpService._handle_search_apis` 异常兜底路径 | 直接构造降级响应（primary 工具摘要）而不走 TF-IDF 流程；供 `search()` 本身抛异常时作为最后防线 |
+| `increment_rate_limited()` | `McpService._handle_search_apis` 限流分支 | 累加 `_rate_limited_count`，用于 `/admin/status` 的 `discovery.rate_limited_count` 指标 |
+| `describe()` | `/admin/status` | 返回发现引擎指标快照（见 13.2 节） |
+
+**设计要点**：`build_fallback_response` 必须是独立于 `search()` 的无状态公共接口。当 `search()` 本身抛异常时，若仍走 `search()` 内部的降级分支，异常可能沿调用栈再次冒泡；通过对外暴露一条纯函数式降级路径（只访问 `_build_fallback` + `_format_response`），保证异常兜底路径自身不会失败。
 
 ---
 
@@ -579,25 +648,25 @@ class ToolDiscoveryEngine:
 
 ### 11.1 新增文件
 
-| 文件 | 职责 |
-|------|------|
-| `app/core/discovery_engine.py` | `ToolDiscoveryEngine` 类：索引构建、TF-IDF 评分、分类过滤、结果格式化、发现主逻辑 |
-| `app/models/discovery_models.py` | `SearchApisParams`（search_apis 参数模型）、`SearchResult`（检索结果模型） |
-| `tests/test_discovery_engine.py` | 发现引擎单元测试与集成测试 |
+| 文件                               | 职责                                                          |
+| -------------------------------- | ----------------------------------------------------------- |
+| `app/core/discovery_engine.py`   | 模块常量 `SEARCH_APIS_SCHEMA`；模块级私有函数 `_chinese_analyzer` / `_build_document` / `_simplify_schema`；`ToolDiscoveryEngine` 类：索引构建 `rebuild_index`、TF-IDF 检索 `search`、公共降级入口 `build_fallback_response`、限流计数 `increment_rate_limited`、指标快照 `describe` |
+| `app/models/discovery_models.py` | `SearchApisParams`（Pydantic 模型，字段 `query`（`min_length=1`）、`category`、`top_k`）；`DiscoveryResult`（dataclass，字段 `matched_tools` / `query` / `total_indexed` / `category_filter` / `fallback_triggered` / `primary_tools: list[dict[str, str]]`） |
+| `tests/test_discovery_engine.py` | 发现引擎单元测试与集成测试（分词、索引构建、语义评分、分类过滤、降级行为、模型校验、引擎异常降级、匿名限流等）                                               |
 
 ### 11.2 修改文件
 
-| 文件 | 修改内容 | 影响范围 |
-|------|---------|---------|
-| `app/models/tool_config.py` | `ToolMeta` 新增 `category: str \| None = None` 和 `tier: str = "primary"` | 模型层 |
-| `app/core/mcp_service.py` | ① `tools/list` 分支改为：仅返回 primary 工具 + 注入 `search_apis` schema。② `tools/call` 分支新增：识别 `name="search_apis"` 并**在 `get_tool()` 之前**拦截路由到 `ToolDiscoveryEngine`，其余工具走原流程。③ 构造函数新增 `discovery_engine` 和 `discovery_rate_limiter` 参数。④ `handle()` 方法签名新增可选参数 `client_key: str \| None = None`，用于 `search_apis` 独立限流的按客户端隔离。⑤ 对 `search_apis` 参数的 Pydantic `ValidationError` 进行显式捕获，转换为 `VALIDATION_ERROR`（-32602）而非默认的 `INTERNAL_ERROR`（-32603）。 | 协议层（核心改动） |
-| `app/core/tool_registry.py` | `load_initial_snapshot()` / `reload()` / `rollback()` 成功后通知 `ToolDiscoveryEngine` 重建索引；新增 `list_primary_tools()` 辅助方法 | 注册层 |
-| `app/main.py` | lifespan 中按以下顺序初始化发现相关组件（详见 11.4 节） | 应用入口 |
-| `app/settings.py` | 新增发现相关配置字段（含 `search_apis` 限流配置）；**注意 `with_base_dir()` 方法逐字段拷贝，新增字段必须同步添加** | 配置层 |
-| `app/api/mcp_routes.py` | `mcp_endpoint` 中提取的 `client_key` 作为新参数传入 `McpService.handle()`，使 `McpService` 内部能对 `search_apis` 执行按客户端隔离的独立限流 | 路由层（最小改动） |
-| `app/api/admin_routes.py` | `/admin/status` 新增发现统计输出（可选） | 管理接口 |
-| `pyproject.toml` | 新增 `scikit-learn` 和 `jieba` 依赖 | 依赖管理 |
-| `configs/tools/*.yaml` | 现有工具补充 `category` 和 `tier` 字段 | 工具配置 |
+| 文件                          | 修改内容                                                                                                                                                                                                                                                                                                                                                                                                                                      | 影响范围      |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `app/models/tool_config.py` | `ToolMeta` 新增 `category: str \| None = None` 和 `tier: Literal["primary", "secondary", "utility"] = "primary"`（使用 `Literal` 使 Pydantic 在配置加载阶段直接拒绝非法 tier 值）                                                                                                                                                                                                                                                                                                                                                                    | 模型层       |
+| `app/core/mcp_service.py`   | ① `tools/list` 分支改为：当 `discovery_engine` 存在时仅返回 primary 工具 + 注入 `SEARCH_APIS_SCHEMA`；`discovery_engine is None` 时保留原有的全量工具列表行为（向后兼容）。② `tools/call` 分支新增：识别 `name="search_apis"` 并**在 `get_tool()` 之前**拦截路由到 `ToolDiscoveryEngine`，其余工具走原流程。③ 构造函数新增关键字参数 `discovery_engine` 和 `discovery_rate_limiter`，均可选。④ `handle()` 方法签名新增可选关键字参数 `client_key: str \| None = None`，用于 `search_apis` 独立限流的按客户端隔离，内部再用 `"__anonymous__"` 兜底。⑤ 对 `search_apis` 参数的 Pydantic `ValidationError` 进行显式捕获，转换为 `VALIDATION_ERROR`（-32602）而非默认的 `INTERNAL_ERROR`（-32603）。⑥ `ToolDiscoveryEngine.search()` 调用使用 `try/except Exception` 包裹，捕获异常后调用 `build_fallback_response()` 降级，并以 `event=search_apis_engine_error` 记录错误日志（含 `request_id`）。⑦ 将 JSON-RPC 请求 `id` 作为 `request_id` 透传给 `search()` 以及限流 / 异常事件日志。 | 协议层（核心改动） |
+| `app/core/tool_registry.py` | ① `load_initial_snapshot()` 期间 `_discovery_engine` 尚未绑定（为 `None`），初始索引构建由 `main.py` 显式完成。② `reload()` / `rollback()` 成功后调用 `_notify_discovery_engine()` 通知索引重建；其中重建失败不影响快照切换（捕获异常后仅记录 `discovery_index_rebuild_failed` 日志）。③ 新增 `list_primary_tools()`（返回全量 `primary` 层级工具）与 `set_discovery_engine()`（后绑定注入，打破循环依赖）。                                                                                                                                                                                                                                                                                                                     | 注册层       |
+| `app/main.py`               | lifespan 中按以下顺序初始化发现相关组件（详见 11.4 节）                                                                                                                                                                                                                                                                                                                                                                                                       | 应用入口      |
+| `app/settings.py`           | 新增发现相关配置字段（含 `search_apis` 限流配置）；**注意 `with_base_dir()` 方法逐字段拷贝，新增字段必须同步添加**                                                                                                                                                                                                                                                                                                                                                              | 配置层       |
+| `app/api/mcp_routes.py`     | `mcp_endpoint` 中提取的 `client_key` 作为新参数传入 `McpService.handle()`，使 `McpService` 内部能对 `search_apis` 执行按客户端隔离的独立限流                                                                                                                                                                                                                                                                                                                            | 路由层（最小改动） |
+| `app/api/admin_routes.py`   | `/admin/status` 新增发现统计输出（可选）                                                                                                                                                                                                                                                                                                                                                                                                              | 管理接口      |
+| `pyproject.toml`            | 新增 `scikit-learn` 和 `jieba` 依赖                                                                                                                                                                                                                                                                                                                                                                                                            | 依赖管理      |
+| `configs/tools/*.yaml`      | 现有工具补充 `category` 和 `tier` 字段                                                                                                                                                                                                                                                                                                                                                                                                             | 工具配置      |
 
 ### 11.3 不修改的文件
 
@@ -659,17 +728,18 @@ mcp_service = McpService(
 
 ## 12. 错误处理设计
 
-| 场景 | 处理方式 |
-|------|---------|
-| `search_apis` 缺少 `query` 参数 | `McpService` 显式捕获 `SearchApisParams` 的 Pydantic `ValidationError`，转换为 `VALIDATION_ERROR` 类别（JSON-RPC -32602），而非由通用 `Exception` 处理器返回 `INTERNAL_ERROR`（-32603） |
-| `search_apis` 的 `query` 为空字符串 | 同上，`SearchApisParams.query` 设置 `min_length=1`，空字符串触发 `ValidationError` 后转为 -32602 |
-| `search_apis` 超过独立限流 | 返回 `isError: true` 的 MCP result，附带限流提示（见 8.4 节） |
-| `category` 不存在 | 返回空匹配列表（不报错） |
-| `top_k` 超出范围 | 截断到 `max_top_k`，不报错 |
-| TF-IDF 索引未就绪 | 降级返回 primary 工具摘要 |
-| 所有工具评分低于阈值 | 若 `fallback_on_empty=true`，降级返回 primary 工具摘要 |
-| 发现引擎内部异常 | 捕获后降级返回 primary 工具摘要，记录错误日志 |
-| `tools/call` 调用不存在的工具（幻觉/热更新） | 现有 `TOOL_NOT_FOUND` 错误，附带 `available_tools` |
+| 场景                            | 处理方式                                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_apis` 缺少 `query` 参数   | `McpService` 显式捕获 `SearchApisParams` 的 Pydantic `ValidationError`，转换为 `VALIDATION_ERROR` 类别（JSON-RPC -32602），而非由通用 `Exception` 处理器返回 `INTERNAL_ERROR`（-32603） |
+| `search_apis` 的 `query` 为空字符串 | 同上，`SearchApisParams.query` 设置 `min_length=1`，空字符串触发 `ValidationError` 后转为 -32602                                                                             |
+| `search_apis` 超过独立限流          | 返回 `isError: true` 的 MCP result，附带限流提示（见 8.5 节），累计 `_rate_limited_count`                                                                                                               |
+| `category` 不存在（过滤结果为空）       | 返回 `matched_tools=[]` 的空结果，`fallback_triggered=False`，**不触发降级**，不计入 `_fallback_count`（显式约束未命中时降级反而误导 LLM）                                                                                                                                                  |
+| `top_k` 超出范围                  | 截断到 `max_top_k`，不报错（见 `search()` 首行 `min(top_k or default, max)`）                                                                                                                                           |
+| TF-IDF 索引未就绪（未调用过 `rebuild_index` 或工具列表为空）                  | 进入降级分支，返回 primary 工具摘要；若 `fallback_on_empty=false` 则仅返回简短文本                                                                                                                                             |
+| 所有工具评分低于阈值                    | 进入降级分支；`fallback_triggered` 取决于 `discovery_fallback_on_empty` 配置                                                                                                                  |
+| 发现引擎内部异常（TF-IDF 计算崩溃、依赖库异常等） | 在 `McpService._handle_search_apis` 对 `ToolDiscoveryEngine.search()` 调用包裹 `try/except Exception`，捕获后调用公共接口 `ToolDiscoveryEngine.build_fallback_response(query, category, primary_tools)` 降级返回 primary 工具摘要，并以 `event=search_apis_engine_error` 记录错误日志（含 `request_id`）                                                                                                                                   |
+| 索引重建抛异常（`rebuild_index` 内部崩溃） | `ToolRegistry._notify_discovery_engine()` 捕获后仅记录 `event=discovery_index_rebuild_failed` 日志，保留旧索引继续服务                                                                                                                                   |
+| `tools/call` 调用不存在的工具（幻觉/热更新） | 现有 `TOOL_NOT_FOUND` 错误，附带 `available_tools`（注意：`available_tools` 为注册表中的全部工具名，**不包含虚拟工具 `search_apis`**）                                                                                                                   |
 
 ---
 
@@ -677,7 +747,9 @@ mcp_service = McpService(
 
 ### 13.1 结构化日志
 
-每次 `search_apis` 调用记录：
+通过 `app.utils.logging.log_json` 按事件名输出结构化 JSON 日志。主要事件：
+
+#### `search_apis_called`（每次发现调用，位于 `ToolDiscoveryEngine._log_search`）
 
 ```json
 {
@@ -690,17 +762,33 @@ mcp_service = McpService(
   "matched_tools": 3,
   "top_score": 0.82,
   "fallback_triggered": false,
-  "rate_limited": false,
   "latency_ms": 2
 }
 ```
 
-### 13.2 管理接口指标（`/admin/status` 扩展，可选）
+**字段来源**：
+- `request_id`：源自 JSON-RPC 请求体的 `id` 字段，由 `McpService._handle_search_apis` 透传给 `ToolDiscoveryEngine.search(..., request_id=request_id)`，再由 `_log_search()` 写入日志。可能为字符串、整数或 `None`（通知型请求，虽然 `tools/call` 通常不是通知），用于串联同一请求在路由、发现引擎、限流器等多处的日志。
+- `top_score`：本次匹配中最高相关性评分；降级或分类未命中时为 `0.0`。
+- `latency_ms`：`ToolDiscoveryEngine.search()` 方法从入口到返回的耗时（不含路由/限流开销）。
+
+#### 其他事件
+
+| 事件名                              | 触发位置                                            | 关键字段                                                               |
+|----------------------------------|-------------------------------------------------|--------------------------------------------------------------------|
+| `search_apis_rate_limited`       | `McpService._handle_search_apis` 限流分支           | `request_id`、`client_key`（即 `effective_key`，匿名时为 `__anonymous__`） |
+| `search_apis_engine_error`       | `McpService._handle_search_apis` 异常兜底分支        | `request_id`、`error`（异常字符串）                                        |
+| `discovery_index_rebuilt`        | `ToolDiscoveryEngine.rebuild_index()` 成功后     | `tool_count`                                                       |
+| `discovery_index_rebuild_failed` | `ToolRegistry._notify_discovery_engine()` 捕获异常后 | `error`                                                            |
+
+### 13.2 管理接口指标（`/admin/status` 扩展）
+
+`/admin/status` 端点在 `app/api/admin_routes.py` 中输出 `discovery` 子对象，内容由 `ToolDiscoveryEngine.describe()` 返回：
 
 ```json
 {
   "discovery": {
     "total_searches": 156,
+    "matched_requests": 140,
     "avg_matched_tools": 3.2,
     "avg_top_score": 0.65,
     "fallback_count": 12,
@@ -711,6 +799,19 @@ mcp_service = McpService(
 }
 ```
 
+**字段精确含义**：
+
+| 字段                    | 语义                                                                             |
+|-----------------------|--------------------------------------------------------------------------------|
+| `total_searches`      | 自进程启动以来 `search()` 或 `build_fallback_response()` 被调用的总次数（包含降级、分类未命中、正常匹配、引擎异常兜底四类情况；**不含**被限流提前短路而未进入引擎的请求）               |
+| `matched_requests`    | 真正匹配到至少一个工具的请求数（不含降级与分类未命中）                                              |
+| `avg_matched_tools`   | `_total_matched / total_searches`：每次搜索平均匹配到的工具数量。分母为全部请求，反映整体检索广度             |
+| `avg_top_score`       | `_total_top_score / matched_requests`：**仅在匹配到工具的请求上**取首项 `top_score` 的平均值，反映检索命中质量。若无匹配请求则为 `0.0` |
+| `fallback_count`      | 进入降级分支的次数（TF-IDF 结果为空或索引未就绪）                                                   |
+| `rate_limited_count`  | 触发独立限流并被拒绝的次数                                                                   |
+| `index_tool_count`    | 当前索引中的工具数量                                                                   |
+| `last_index_built_at` | 最近一次 `rebuild_index()` 成功完成的 UTC ISO8601 时间戳；空索引时为 `null`                     |
+
 ---
 
 ## 14. 测试方案
@@ -718,64 +819,91 @@ mcp_service = McpService(
 ### 14.1 单元测试
 
 1. **TF-IDF 索引构建**：
+   
    - 索引包含全部 tier 的工具
    - 工具列表变更后索引正确重建
    - 空工具列表不抛异常
 
 2. **语义评分**：
+   
    - 精确名称匹配得分最高
    - 中文关键词匹配正确排序（如"查询用户"命中 get_user）
    - 完全不相关查询返回空列表或触发降级
 
 3. **分类过滤**：
+   
    - 按 category 过滤正确
    - category 为 null 的工具在过滤时不被包含
-   - 不存在的 category 返回空列表
+   - 不存在的 category 返回空列表，且 `fallback_triggered=False`（不触发降级，也不计入 `_fallback_count`）
 
 4. **降级行为**：
+   
    - 全部评分低于阈值时降级返回 primary 工具摘要
    - `fallback_triggered` 标记正确
+   - 降级文本逐行包含 `- {name}: {description}`；`structuredContent.primary_tools` 仅输出工具名列表
 
 5. **结果格式化**：
+   
    - `content[0].text` 包含工具名、描述和简化参数
    - `structuredContent` 包含完整 inputSchema
    - 降级时 text 包含 primary 工具列表
 
+6. **模型校验**：
+
+   - `ToolMeta` 对非法 `tier` 值（如 `"praimry"`）在构造时即抛 `ValidationError`
+   - `SearchApisParams` 对空字符串 `query` 拒绝（`min_length=1`）
+
+7. **观测指标**：
+
+   - `describe()` 的 `avg_top_score` 仅按匹配到工具的请求统计（即 `_matched_requests` 作为分母），降级与分类未命中请求不计入分母
+
 ### 14.2 集成测试
 
 1. **`tools/list` 初始化**：
+   
    - 无参数调用只返回 primary 工具 + `search_apis`
    - `search_apis` 的 inputSchema 格式正确
    - secondary/utility 工具不出现在列表中
 
 2. **`search_apis` 完整调用链**：
+   
    - 调用 `search_apis(query="查询用户")` 返回匹配工具
    - 返回结果中包含工具的 inputSchema
    - LLM 据此调用业务工具成功（先发现、再调用闭环）
 
 3. **`search_apis` 限流**：
+   
    - 超限后返回 `isError: true` 限流提示
    - 限流不影响普通业务工具调用
+   - **匿名流量**：未携带 `x-api-key` 时仍然能够被限流（通过 `client_key` 三级兜底 + McpService 的 `"__anonymous__"` 防御性兜底共同保证）
 
-4. **热重载联动**：
+4. **发现引擎异常降级**：
+
+   - 通过 mock 使 `ToolDiscoveryEngine.search()` 抛出异常
+   - 验证 `McpService` 捕获后返回标准 MCP result（非 JSON-RPC error），`content` 文本为 primary 工具摘要
+   - 日志中出现 `event=search_apis_engine_error` 事件
+
+5. **热重载联动**：
+   
    - 工具配置变更后索引自动重建
    - 新增工具可被 `search_apis` 检索到
    - 回滚后索引恢复
 
-5. **现有功能不回退**：
+6. **现有功能不回退**：
+   
    - 普通业务工具的 `tools/call` 行为完全不变
    - 鉴权、全局限流、会话管理等不受影响
 
 ### 14.3 验收指标
 
-| 指标 | 目标 |
-|------|------|
-| `tools/list` 初始列表 | 仅包含 primary 工具 + search_apis |
-| `search_apis` 延迟 | 单次查询 < 5ms（20 个工具规模） |
-| 相关性准确率 | Top-3 中包含正确工具的概率 > 80%（基于预设测试查询） |
-| 索引重建时间 | < 50ms |
-| 降级可靠性 | 任何异常情况下至少返回 primary 工具摘要 |
-| 限流有效性 | 超限后明确阻断，不影响业务工具调用 |
+| 指标                | 目标                               |
+| ----------------- | -------------------------------- |
+| `tools/list` 初始列表 | 仅包含 primary 工具 + search_apis     |
+| `search_apis` 延迟  | 单次查询 < 5ms（20 个工具规模）             |
+| 相关性准确率            | Top-3 中包含正确工具的概率 > 80%（基于预设测试查询） |
+| 索引重建时间            | < 50ms                           |
+| 降级可靠性             | 任何异常情况下至少返回 primary 工具摘要         |
+| 限流有效性             | 超限后明确阻断，不影响业务工具调用                |
 
 ---
 
@@ -789,9 +917,9 @@ mcp_service = McpService(
 
 ### 15.2 实验一：初始 Token 消耗对比
 
-| 组别 | `tools/list` 行为 | 观测 |
-|------|------------------|------|
-| 对照组 | 返回全部 20 个工具 | 响应体大小 (bytes)、工具描述总 token 数 |
+| 组别  | `tools/list` 行为                    | 观测                          |
+| --- | ---------------------------------- | --------------------------- |
+| 对照组 | 返回全部 20 个工具                        | 响应体大小 (bytes)、工具描述总 token 数 |
 | 实验组 | 返回 primary 工具 + search_apis（约 8 个） | 响应体大小 (bytes)、工具描述总 token 数 |
 
 预期结论：初始化阶段 token 消耗降低 50%~65%。
@@ -800,14 +928,14 @@ mcp_service = McpService(
 
 准备 10~15 条预设自然语言查询，每条有明确的"正确工具"：
 
-| 查询 | 正确工具 |
-|------|---------|
-| "查询用户邮箱" | get_user |
+| 查询        | 正确工具         |
+| --------- | ------------ |
+| "查询用户邮箱"  | get_user     |
 | "创建一个新订单" | create_order |
-| ... | ... |
+| ...       | ...          |
 
-| 指标 | 观测 |
-|------|------|
+| 指标        | 观测                |
+| --------- | ----------------- |
 | Top-3 命中率 | 正确工具出现在 Top-3 的比例 |
 | Top-5 命中率 | 正确工具出现在 Top-5 的比例 |
 
@@ -817,11 +945,11 @@ mcp_service = McpService(
 
 模拟 LLM 对话流程：
 
-| 步骤 | 操作 | 可见工具数 |
-|------|------|-----------|
-| 1. 初始化 | `tools/list` | ~8 个（primary + search_apis） |
-| 2. 发现 | `tools/call(search_apis, query="...")` | 额外获得 Top-3 工具 |
-| 3. 调用 | `tools/call(具体工具)` | 成功执行 |
+| 步骤     | 操作                                     | 可见工具数                       |
+| ------ | -------------------------------------- | --------------------------- |
+| 1. 初始化 | `tools/list`                           | ~8 个（primary + search_apis） |
+| 2. 发现  | `tools/call(search_apis, query="...")` | 额外获得 Top-3 工具               |
+| 3. 调用  | `tools/call(具体工具)`                     | 成功执行                        |
 
 验证："初始化 → 发现 → 调用"三阶段完整闭环可以工作。
 
@@ -829,11 +957,11 @@ mcp_service = McpService(
 
 连续快速发送 15 次 `search_apis` 调用（默认限流 10 次/60 秒）：
 
-| 指标 | 预期 |
-|------|------|
-| 前 10 次 | 正常返回检索结果 |
+| 指标        | 预期                      |
+| --------- | ----------------------- |
+| 前 10 次    | 正常返回检索结果                |
 | 第 11~15 次 | 返回 `isError: true` 限流提示 |
-| 同期普通工具调用 | 不受影响 |
+| 同期普通工具调用  | 不受影响                    |
 
 ---
 
@@ -841,10 +969,10 @@ mcp_service = McpService(
 
 ### 16.1 新增运行时依赖
 
-| 包名 | 版本要求 | 用途 | 大小 |
-|------|---------|------|------|
-| `scikit-learn` | >= 1.3.0 | TF-IDF 向量化 + 余弦相似度 | ~30MB（含传递依赖 numpy、scipy 等合计约 150-200MB） |
-| `jieba` | >= 0.42.0 | 中文分词 | ~2MB |
+| 包名             | 版本要求      | 用途                 | 大小                                      |
+| -------------- | --------- | ------------------ | --------------------------------------- |
+| `scikit-learn` | >= 1.3.0  | TF-IDF 向量化 + 余弦相似度 | ~30MB（含传递依赖 numpy、scipy 等合计约 150-200MB） |
+| `jieba`        | >= 0.42.0 | 中文分词               | ~2MB                                    |
 
 ### 16.2 环境要求
 
@@ -860,7 +988,7 @@ mcp_service = McpService(
 ### 第 1~2 天：核心引擎
 
 - 实现 `ToolDiscoveryEngine`（jieba 分词 + TF-IDF 索引构建 + 评分 + 过滤 + 降级 + 结果格式化）
-- 实现 `SearchApisParams` / `SearchResult` 模型
+- 实现 `SearchApisParams` / `DiscoveryResult` 模型（见 `app/models/discovery_models.py`；`SearchApisParams` 为 Pydantic 模型承载入参校验，`DiscoveryResult` 为 dataclass 承载引擎内部检索结果）
 - 单元测试覆盖评分、过滤、降级、格式化逻辑
 
 ### 第 3~4 天：协议集成
@@ -892,22 +1020,22 @@ mcp_service = McpService(
 
 **`tests/test_gateway.py`**：
 
-| 测试函数 | 需要的改动 |
-|---------|-----------|
-| `test_initialize_and_tools_list` | 增加断言：`"search_apis" in tool_names`；若存在 secondary/utility 工具，验证它们**不在**列表中 |
-| `test_tools_call_unknown_tool_returns_error` | 确认 `available_tools` 中不包含 `"search_apis"`（它是虚拟工具，不在注册表中） |
-| `build_client` / `_do_initialize` | `McpService` 构造函数签名变化（新增 `discovery_engine`、`discovery_rate_limiter`），需更新 `create_app` 或确保默认值兼容 |
+| 测试函数                                         | 需要的改动                                                                                           |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `test_initialize_and_tools_list`             | 增加断言：`"search_apis" in tool_names`；若存在 secondary/utility 工具，验证它们**不在**列表中                       |
+| `test_tools_call_unknown_tool_returns_error` | 确认 `available_tools` 中不包含 `"search_apis"`（它是虚拟工具，不在注册表中）                                        |
+| `build_client` / `_do_initialize`            | `McpService` 构造函数签名变化（新增 `discovery_engine`、`discovery_rate_limiter`），需更新 `create_app` 或确保默认值兼容 |
 
 **`tests/test_config_registry.py`**：
 
-| 测试函数 | 需要的改动 |
-|---------|-----------|
+| 测试函数                                                  | 需要的改动                                                                                                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `test_registry_reload_*` / `test_registry_rollback_*` | 若 `ToolRegistry` 内部调用 `_discovery_engine.rebuild_index()`，需在测试中设置 `registry.set_discovery_engine(...)` 或确认 `_discovery_engine is None` 时跳过重建不抛异常 |
 
 **`tests/test_models.py`**：
 
-| 测试函数 | 需要的改动 |
-|---------|-----------|
+| 测试函数            | 需要的改动                                                            |
+| --------------- | ---------------------------------------------------------------- |
 | `ToolMeta` 相关测试 | 验证 `category` 和 `tier` 的默认值（`None` 和 `"primary"`）；验证显式赋值后的序列化正确性 |
 
 **其他测试文件**（`test_adaptation_engine.py`、`test_response_error_mapper.py`、`test_security_components.py`、`test_sqlite_repositories.py`、`test_session_manager.py`、`test_runtime_features.py`）预期**不需要改动**，因为它们不涉及 `tools/list` 行为或 `McpService` 构造函数。
@@ -922,16 +1050,16 @@ mcp_service = McpService(
 
 ## 18. 风险与应对
 
-| 风险 | 严重度 | 应对 |
-|------|--------|------|
-| 工具数量过少时 TF-IDF 区分度不高 | 中 | 创建模拟工具扩大规模；空结果时降级返回 primary 摘要 |
-| 中文分词精度影响匹配质量 | 低 | 使用 jieba 分词；必要时可添加自定义词典 |
-| `tools/list` 行为变更导致现有测试失败 | 中 | 预留时间集中更新测试；变更是有意设计，非 regression |
-| LLM 不遵守 Prompt 中的重试限制 | 中 | 网关级限流作为硬限制兜底，不依赖 LLM 自律 |
-| 部分 MCP 客户端可能限制只能调用 `tools/list` 中的工具 | 低 | 本项目演示使用 HTTP 客户端和 `llm_demo.py`，不受此限；论文中标注为已知限制 |
-| 索引重建与查询并发 | 低 | 原子替换引用策略 + 局部变量读取 |
-| jieba 首次加载慢（~1-2s） | 低 | 仅在服务启动时发生一次 |
-| scikit-learn 及传递依赖（numpy、scipy 等）合计约 150-200MB | 低 | 服务端项目，磁盘开销可接受 |
+| 风险                                             | 严重度 | 应对                                              |
+| ---------------------------------------------- | --- | ----------------------------------------------- |
+| 工具数量过少时 TF-IDF 区分度不高                           | 中   | 创建模拟工具扩大规模；空结果时降级返回 primary 摘要                  |
+| 中文分词精度影响匹配质量                                   | 低   | 使用 jieba 分词；必要时可添加自定义词典                         |
+| `tools/list` 行为变更导致现有测试失败                      | 中   | 预留时间集中更新测试；变更是有意设计，非 regression                 |
+| LLM 不遵守 Prompt 中的重试限制                          | 中   | 网关级限流作为硬限制兜底，不依赖 LLM 自律                         |
+| 部分 MCP 客户端可能限制只能调用 `tools/list` 中的工具           | 低   | 本项目演示使用 HTTP 客户端和 `llm_demo.py`，不受此限；论文中标注为已知限制 |
+| 索引重建与查询并发                                      | 低   | 原子替换引用策略 + 局部变量读取                               |
+| jieba 首次加载慢（~1-2s）                             | 低   | 仅在服务启动时发生一次                                     |
+| scikit-learn 及传递依赖（numpy、scipy 等）合计约 150-200MB | 低   | 服务端项目，磁盘开销可接受                                   |
 
 ---
 

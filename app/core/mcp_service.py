@@ -131,7 +131,13 @@ class McpService:
                 self.discovery_rate_limiter.enforce(effective_key)
             except GatewayError:
                 self.discovery_engine.increment_rate_limited()
-                log_json(logger, logging.WARNING, "search_apis_rate_limited", client_key=client_key)
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "search_apis_rate_limited",
+                    request_id=request_id,
+                    client_key=effective_key,
+                )
                 return self._success(request_id, {
                     "content": [{
                         "type": "text",
@@ -163,7 +169,13 @@ class McpService:
                 request_id=request_id,
             )
         except Exception as exc:
-            log_json(logger, logging.ERROR, "search_apis_engine_error", error=str(exc))
+            log_json(
+                logger,
+                logging.ERROR,
+                "search_apis_engine_error",
+                request_id=request_id,
+                error=str(exc),
+            )
             result = self.discovery_engine.build_fallback_response(
                 query=search_params.query,
                 category=search_params.category,

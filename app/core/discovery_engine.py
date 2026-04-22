@@ -104,6 +104,7 @@ class ToolDiscoveryEngine:
 
         self._total_searches: int = 0
         self._total_matched: int = 0
+        self._matched_requests: int = 0
         self._total_top_score: float = 0.0
         self._fallback_count: int = 0
         self._rate_limited_count: int = 0
@@ -201,6 +202,7 @@ class ToolDiscoveryEngine:
             })
 
         self._total_matched += len(matched)
+        self._matched_requests += 1
         self._total_top_score += matched[0]["relevance_score"]
 
         result = DiscoveryResult(
@@ -219,7 +221,12 @@ class ToolDiscoveryEngine:
         category: str | None = None,
         primary_tools: list[ToolConfig] | None = None,
     ) -> dict[str, Any]:
-        """Public fallback entry for callers (e.g. McpService exception handler)."""
+        """Public fallback entry for callers (e.g. McpService exception handler).
+
+        Increments ``_total_searches`` so that ``describe()`` keeps the invariant
+        ``fallback_count <= total_searches`` even when this bypass path is used.
+        """
+        self._total_searches += 1
         result = self._build_fallback(query, category, primary_tools or [])
         return self._format_response(result)
 
@@ -333,17 +340,17 @@ class ToolDiscoveryEngine:
         self._rate_limited_count += 1
 
     def describe(self) -> dict[str, Any]:
-        non_fallback = self._total_searches - self._fallback_count
         return {
             "total_searches": self._total_searches,
+            "matched_requests": self._matched_requests,
             "avg_matched_tools": (
                 round(self._total_matched / self._total_searches, 1)
                 if self._total_searches
                 else 0.0
             ),
             "avg_top_score": (
-                round(self._total_top_score / non_fallback, 2)
-                if non_fallback > 0
+                round(self._total_top_score / self._matched_requests, 2)
+                if self._matched_requests > 0
                 else 0.0
             ),
             "fallback_count": self._fallback_count,
